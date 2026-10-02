@@ -2,11 +2,11 @@ module.exports = {
   apps: [
     {
       name: 'scienstellar-frontend',
+      cwd: '/root/Scienstellar/frontend',
       script: 'npm',
-      args: 'run preview',
+      args: 'run dev',
       env: {
-        PORT: 1337,
-        NODE_ENV: 'production'
+        NODE_ENV: 'development'
       },
       autorestart: true,
       max_restarts: 10,
