@@ -9,7 +9,6 @@ const rpcServer = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
 const HorizonServer = StellarSdk.Horizon ? StellarSdk.Horizon.Server : StellarSdk.Server;
 const horizonServer = new HorizonServer(HORIZON_URL);
 
-// Public dummy account for read-only simulations (no wallet required)
 const DUMMY_ACCOUNT = new StellarSdk.Account(
   "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
   "0"
@@ -37,6 +36,7 @@ function parsePaper(rawPaper) {
   let sha256Hash = rawHash;
   let minDonation = "5";
   let decryptionKey = "";
+  let fileName = "";
 
   if (rawHash && (rawHash.startsWith("{") || rawHash.startsWith("["))) {
     try {
@@ -44,9 +44,23 @@ function parsePaper(rawPaper) {
       if (meta.hash) sha256Hash = meta.hash;
       if (meta.minDonation) minDonation = String(meta.minDonation);
       if (meta.decryptionKey) decryptionKey = meta.decryptionKey;
+      if (meta.fileName) fileName = meta.fileName;
     } catch (e) {
-      // not JSON format
+      // ignore
     }
+  }
+
+  // Ensure fileName always ends with .zip
+  if (!fileName && downloadUrl) {
+    const match = downloadUrl.match(/filename=([^&]+)/);
+    if (match) fileName = decodeURIComponent(match[1]);
+  }
+  if (!fileName) {
+    const sanitized = (title || "research-paper").toLowerCase().replace(/[^a-z0-9_-]/g, "_").slice(0, 30);
+    fileName = `${sanitized}.zip`;
+  }
+  if (!fileName.toLowerCase().endsWith(".zip")) {
+    fileName = `${fileName.replace(/\.[^/.]+$/, "")}.zip`;
   }
 
   return {
@@ -60,14 +74,12 @@ function parsePaper(rawPaper) {
     downloadUrl,
     sha256Hash,
     decryptionKey,
+    fileName,
     totalDonations,
     isOnChain: true,
   };
 }
 
-/**
- * Reads all published papers from the Soroban smart contract on Testnet
- */
 export async function fetchOnChainPapers() {
   try {
     const contract = new StellarSdk.Contract(CONTRACT_ID);
@@ -119,9 +131,6 @@ export async function fetchOnChainPapers() {
   }
 }
 
-/**
- * Invokes publish_paper on the Soroban smart contract with Freighter signature
- */
 export async function publishPaperOnChain({
   authorAddress,
   authorName,
@@ -132,6 +141,7 @@ export async function publishPaperOnChain({
   sha256Hash,
   minDonation,
   decryptionKey,
+  fileName,
 }) {
   let account;
   try {
@@ -148,6 +158,7 @@ export async function publishPaperOnChain({
     hash: sha256Hash || "",
     minDonation: minDonation || "5",
     decryptionKey: decryptionKey || "",
+    fileName: fileName || "research-archive.zip",
   });
 
   const tx = new StellarSdk.TransactionBuilder(account, {
@@ -169,17 +180,14 @@ export async function publishPaperOnChain({
     .setTimeout(180)
     .build();
 
-  // 1. Simulate on Soroban RPC
   const sim = await rpcServer.simulateTransaction(tx);
   if (!StellarSdk.rpc.Api.isSimulationSuccess(sim)) {
     throw new Error(`Simulation failed on Testnet: ${JSON.stringify(sim)}`);
   }
 
-  // 2. Assemble transaction with footprint & resource fees
   const assemble = StellarSdk.rpc?.assembleTransaction || StellarSdk.assembleTransaction;
   const preparedTx = assemble(tx, sim).build();
 
-  // 3. Request signature from Freighter
   const signFn = Freighter.signTransaction || Freighter.default?.signTransaction;
   const signedResult = await signFn(preparedTx.toXDR(), {
     network: "TESTNET",
@@ -195,7 +203,6 @@ export async function publishPaperOnChain({
     throw new Error("Transaction signature was declined in Freighter.");
   }
 
-  // 4. Submit to Soroban RPC
   const sendRes = await rpcServer.sendTransaction(
     StellarSdk.TransactionBuilder.fromXDR(signedXdr, StellarSdk.Networks.TESTNET)
   );
@@ -204,7 +211,6 @@ export async function publishPaperOnChain({
     throw new Error(`Submission rejected: ${JSON.stringify(sendRes.errorResult)}`);
   }
 
-  // 5. Poll for confirmation
   let statusRes = await rpcServer.getTransaction(sendRes.hash);
   let attempts = 0;
   while (statusRes.status === "NOT_FOUND" && attempts < 25) {

@@ -25,17 +25,18 @@ export default function PaperCard({ paper }) {
           downloadUrl: parsed.downloadUrl,
           decryptionKey: parsed.decryptionKey,
           sha256Hash: parsed.sha256Hash || paper.sha256Hash,
+          fileName: parsed.fileName || paper.fileName,
         });
         if (parsed.txHash) setTxHash(parsed.txHash);
       } catch (err) {
-        console.error("Error restoring unlocked paper state:", err);
+        console.error("Error restoring unlocked state:", err);
       }
     }
-  }, [walletAddress, paper.id, paper.sha256Hash]);
+  }, [walletAddress, paper.id, paper.sha256Hash, paper.fileName]);
 
   const handleDownloadClick = () => {
     if (!isConnected) {
-      alert("A connected Freighter wallet is required to donate and download.");
+      alert("A connected Freighter wallet is required to donate and access.");
       connect();
       return;
     }
@@ -61,6 +62,7 @@ export default function PaperCard({ paper }) {
         downloadUrl: paper.downloadUrl,
         decryptionKey: paper.decryptionKey,
         sha256Hash: paper.sha256Hash,
+        fileName: paper.fileName || "research-archive.zip",
         txHash: res.hash,
       };
 
@@ -77,6 +79,8 @@ export default function PaperCard({ paper }) {
       setIsProcessing(false);
     }
   };
+
+  const displayFileName = paper.fileName || unlockedData?.fileName || "archive.zip";
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col justify-between hover:border-gray-700 transition-all">
@@ -103,7 +107,7 @@ export default function PaperCard({ paper }) {
         {unlockedData ? (
           <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-lg p-3 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-emerald-400">✓ Download Package Unlocked</span>
+              <span className="text-xs font-semibold text-emerald-400">✓ ZIP Archive Unlocked</span>
               {txHash && (
                 <a
                   href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
@@ -116,30 +120,49 @@ export default function PaperCard({ paper }) {
               )}
             </div>
 
-            <div>
-              <span className="text-xs text-gray-400 block mb-1">Decryption Secret Key:</span>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={unlockedData.decryptionKey}
-                  className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs font-mono text-emerald-300"
-                />
+            {/* Direct Download of Password-Protected ZIP */}
+            <a
+              href={unlockedData.downloadUrl}
+              download={displayFileName}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-3 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow transition-all flex items-center justify-center gap-2"
+            >
+              <span>📥 Download Protected ZIP ({displayFileName})</span>
+            </a>
+
+            {/* Password to manually enter when extracting ZIP */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-400">
+                  ZIP Extraction Password:
+                </span>
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(unlockedData.decryptionKey);
-                    alert("Decryption key copied to clipboard!");
+                    alert("ZIP password copied to clipboard!");
                   }}
-                  className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+                  className="px-2 py-0.5 text-xs rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium"
                 >
-                  Copy
+                  Copy Password
                 </button>
               </div>
+
+              <input
+                type="text"
+                readOnly
+                value={unlockedData.decryptionKey}
+                className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs font-mono text-emerald-300 select-all"
+              />
+
+              <p className="text-[11px] text-gray-400 leading-tight">
+                Open the downloaded ZIP in Windows Explorer, macOS, WinRAR, or 7-Zip and enter the password above when prompted to extract.
+              </p>
             </div>
 
             {unlockedData.sha256Hash && (
               <div>
-                <span className="text-xs text-gray-400 block mb-1">Integrity Hash (SHA-256 Checksum):</span>
+                <span className="text-xs text-gray-400 block mb-1">Archive Checksum (SHA-256):</span>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -150,7 +173,7 @@ export default function PaperCard({ paper }) {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(unlockedData.sha256Hash);
-                      alert("SHA-256 integrity hash copied!");
+                      alert("SHA-256 hash copied!");
                     }}
                     className="px-2 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
                   >
@@ -159,22 +182,13 @@ export default function PaperCard({ paper }) {
                 </div>
               </div>
             )}
-
-            <a
-              href={unlockedData.downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 block w-full text-center px-3 py-2 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"
-            >
-              Download Encrypted Research File
-            </a>
           </div>
         ) : (
           <button
             onClick={handleDownloadClick}
             className="w-full py-2.5 px-4 rounded-lg bg-gray-800 hover:bg-indigo-600 hover:text-white text-gray-200 text-sm font-medium transition-colors border border-gray-700 flex items-center justify-center gap-2"
           >
-            <span>Donate & Unlock Package</span>
+            <span>Donate & Unlock ZIP</span>
             <span className="text-xs text-gray-400">({paper.minDonation} XLM)</span>
           </button>
         )}
@@ -185,7 +199,7 @@ export default function PaperCard({ paper }) {
           <div className="bg-gray-900 border border-gray-800 rounded-xl max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-bold text-white">Support Research & Unlock Paper</h3>
             <p className="text-xs text-gray-400">
-              Your donation is sent directly to the author on Stellar Testnet. You will receive the download link, decryption key, and the SHA-256 checksum to verify file integrity.
+              Your donation is sent directly to the author on Stellar Testnet. You will receive the password-protected ZIP archive and the extraction password.
             </p>
 
             <div className="bg-gray-950 p-3 rounded border border-gray-800 space-y-1">

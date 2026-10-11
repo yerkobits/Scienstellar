@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useWallet } from "../context/WalletContext";
 import { publishPaperOnChain } from "../services/contract";
+import { generateDecryptionKey, createPasswordProtectedZip } from "../services/crypto";
+import { uploadToIPFS } from "../services/ipfs";
 
 const RESEARCH_CATEGORIES = [
   "Computer Science & AI",
@@ -27,12 +29,60 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
     downloadUrl: "",
     sha256Hash: "",
     minDonation: "5",
-    decryptionKey: "",
+    decryptionKey: generateDecryptionKey(), // Clean password without prefix
+    fileName: "",
   });
 
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [fileStatus, setFileStatus] = useState("");
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Strict validation: ONLY .zip files allowed
+    if (!file.name.toLowerCase().endsWith(".zip")) {
+      alert("Invalid format: Only ZIP (.zip) archives are allowed.");
+      e.target.value = "";
+      return;
+    }
+
+    setSelectedFile(file);
+    setIsProcessingFile(true);
+    setFileStatus("Securing ZIP with password-protection (ZipCrypto standard)...");
+
+    try {
+      const password = formData.decryptionKey || generateDecryptionKey();
+
+      // 1. Create native password-protected ZIP archive
+      const { zipBlob, sha256Hash, fileName } = await createPasswordProtectedZip(file, password);
+
+      setFileStatus(`Uploading protected archive (${fileName}) to external IPFS...`);
+
+      // 2. Upload password-protected binary ZIP to IPFS
+      const ipfsResult = await uploadToIPFS(zipBlob, fileName);
+
+      // 3. Set locked system values
+      setFormData((prev) => ({
+        ...prev,
+        sha256Hash,
+        downloadUrl: ipfsResult.url,
+        decryptionKey: password,
+        fileName,
+      }));
+
+      setFileStatus(`✓ Protected ZIP uploaded to IPFS: ${ipfsResult.cid}`);
+    } catch (err) {
+      console.error(err);
+      setFileStatus(`Upload error: ${err.message || "Failed to process ZIP."}`);
+    } finally {
+      setIsProcessingFile(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -43,7 +93,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
     }
 
     if (!formData.downloadUrl || !formData.decryptionKey) {
-      alert("Please provide both the download source URL and the decryption secret key.");
+      alert("Please upload a ZIP research archive before publishing.");
       return;
     }
 
@@ -59,10 +109,10 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
         sha256Hash: formData.sha256Hash,
         minDonation: formData.minDonation,
         decryptionKey: formData.decryptionKey,
+        fileName: formData.fileName || (selectedFile ? selectedFile.name : "archive.zip"),
       });
 
-      alert(`✓ Paper successfully published on Stellar Testnet!\nTx Hash: ${res.hash}`);
-
+      alert(`✓ Research ZIP successfully published on Stellar Testnet & IPFS!\nTx Hash: ${res.hash}`);
       onPaperCreated();
       onClose();
     } catch (err) {
@@ -77,7 +127,10 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-white">Publish Scientific Paper On-Chain</h2>
+          <div>
+            <h2 className="text-xl font-bold text-white">Publish Scientific Paper (ZIP Only)</h2>
+            <p className="text-xs text-gray-400">Password-protected ZIP archive stored on live IPFS</p>
+          </div>
           <button onClick={onClose} disabled={isSubmitting} className="text-gray-400 hover:text-white">✕</button>
         </div>
 
@@ -88,7 +141,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               type="text"
               readOnly
               value={walletAddress || ""}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm font-mono text-emerald-400 cursor-not-allowed"
+              className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm font-mono text-emerald-400 cursor-not-allowed select-none"
             />
           </div>
 
@@ -141,7 +194,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               required
               rows={3}
               disabled={isSubmitting}
-              placeholder="Summary of research methods and contributions..."
+              placeholder="Summary of research methodology and contributions..."
               value={formData.abstract}
               onChange={(e) => setFormData({ ...formData, abstract: e.target.value })}
               className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm text-white"
@@ -162,61 +215,92 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
             />
           </div>
 
-          {/* Protected Download & Decryption Configuration */}
-          <div className="bg-gray-950 border border-indigo-900/50 p-4 rounded-lg space-y-3">
-            <h3 className="text-sm font-semibold text-indigo-400">Protected Download & Verification Package</h3>
-            
+          {/* ZIP Upload Box (Strictly ZIP only) */}
+          <div className="bg-gray-950 border border-indigo-900/60 p-4 rounded-xl space-y-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Download URL or Magnet Link</label>
-              <input
-                type="text"
-                required
-                disabled={isSubmitting}
-                placeholder="https://ipfs.io/ipfs/... or magnet:?xt=urn:btih:..."
-                value={formData.downloadUrl}
-                onChange={(e) => setFormData({ ...formData, downloadUrl: e.target.value })}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-sm text-white font-mono"
-              />
+              <h3 className="text-sm font-semibold text-indigo-400">Research Archive (Strictly .ZIP Only)</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                The archive is encrypted with password protection before uploading to IPFS.
+              </p>
             </div>
 
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">
-                Integrity Hash (SHA-256) <span className="text-gray-500 font-normal">(Optional)</span>
+            <div className="border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer transition-colors bg-gray-900/50">
+              <input
+                type="file"
+                id="paper-file-upload"
+                accept=".zip,application/zip,application/x-zip-compressed"
+                onChange={handleFileChange}
+                disabled={isProcessingFile || isSubmitting}
+                className="hidden"
+              />
+              <label htmlFor="paper-file-upload" className="cursor-pointer block">
+                <span className="text-indigo-400 text-sm font-medium hover:underline block">
+                  {selectedFile ? `Selected: ${selectedFile.name}` : "Click to select ZIP Archive (.zip)"}
+                </span>
+                <span className="text-xs text-gray-500 block mt-1">
+                  Automatic password protection and IPFS distribution
+                </span>
               </label>
-              <input
-                type="text"
-                disabled={isSubmitting}
-                placeholder="e.g. e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                value={formData.sha256Hash}
-                onChange={(e) => setFormData({ ...formData, sha256Hash: e.target.value })}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-sm text-white font-mono"
-              />
-              <span className="text-xs text-gray-500 block mt-1">
-                Delivered exclusively to verified donors to check file integrity after downloading.
-              </span>
             </div>
 
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Decryption Secret Key / Password</label>
-              <input
-                type="text"
-                required
-                disabled={isSubmitting}
-                placeholder="e.g. scien-aes-key-9f82d1c3a0..."
-                value={formData.decryptionKey}
-                onChange={(e) => setFormData({ ...formData, decryptionKey: e.target.value })}
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-sm text-white font-mono"
-              />
-              <span className="text-xs text-gray-500 block mt-1">
-                Private key unlocked only after confirmed donation on Stellar Testnet.
-              </span>
+            {fileStatus && (
+              <div className="text-xs font-mono text-emerald-400 bg-emerald-950/30 p-2 rounded border border-emerald-900/40">
+                {fileStatus}
+              </div>
+            )}
+
+            {/* Read-Only System Metadata */}
+            <div className="space-y-3 pt-2 border-t border-gray-800/80">
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-gray-400 mb-1 flex items-center justify-between">
+                  <span>IPFS Storage Link</span>
+                  <span className="text-[10px] text-gray-500 font-mono">System-assigned</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  tabIndex="-1"
+                  placeholder="Auto-generated upon ZIP upload"
+                  value={formData.downloadUrl}
+                  className="w-full bg-gray-900/90 border border-gray-800 rounded-lg p-2 text-xs text-indigo-300 font-mono cursor-not-allowed select-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-gray-400 mb-1 flex items-center justify-between">
+                  <span>Archive Integrity Hash (SHA-256)</span>
+                  <span className="text-[10px] text-gray-500 font-mono">System-assigned</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  tabIndex="-1"
+                  placeholder="Calculated from original archive"
+                  value={formData.sha256Hash}
+                  className="w-full bg-gray-900/90 border border-gray-800 rounded-lg p-2 text-xs text-gray-300 font-mono cursor-not-allowed select-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-gray-400 mb-1 flex items-center justify-between">
+                  <span>ZIP Password (No Prefix)</span>
+                  <span className="text-[10px] text-gray-500 font-mono">System-assigned</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  tabIndex="-1"
+                  value={formData.decryptionKey}
+                  className="w-full bg-gray-900/90 border border-gray-800 rounded-lg p-2 text-xs text-emerald-400 font-mono cursor-not-allowed select-all"
+                />
+              </div>
             </div>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4 border-t border-gray-800">
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isProcessingFile}
               onClick={onClose}
               className="px-4 py-2 text-sm rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300"
             >
@@ -224,8 +308,8 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
+              disabled={isSubmitting || isProcessingFile}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 flex items-center gap-2"
             >
               {isSubmitting ? "Publishing On-Chain..." : "Sign & Publish to Testnet"}
             </button>

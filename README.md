@@ -1,57 +1,70 @@
+# 🧪 Scienstellar
 
-## Scienstellar
+> The Decentralized Scientific Knowledge Catalog powered by Stellar.
 
-**Science Stellar** is an open, decentralized catalog for scientific papers—initially focused on blockchain and computer science research.
-
-The project uses a Soroban smart contract to register papers, authors, metadata, versions, timestamps, and official content identifiers such as BitTorrent magnet links. The papers themselves are distributed through peer-to-peer networks, while Soroban provides a verifiable public record linking each publication to its registered content sources. Additional storage and distribution protocols, including eMule or IPFS, may be supported in the future.
-
-Users interact with the project through a web-based catalog where they can discover papers, verify their authenticity and version history, and access available download sources without needing to understand the underlying blockchain infrastructure.
-
-Science Stellar also introduces a transparent funding layer. Users can donate to research projects, support authors, or contribute to the maintenance and distribution of open scientific content using the Stellar network.
-
-The goal is to combine science, peer-to-peer distribution, verifiable publication records, and decentralized funding in a single, accessible platform.
-=======
-# Scienstellar
-
-**Scienstellar** es un catálogo abierto y descentralizado para artículos científicos (centrado inicialmente en blockchain, sistemas distribuidos y criptografía).
-
-Combina el registro inmutable de metadatos, versiones cronológicas e integridad criptográfica en la red **Stellar** mediante un Smart Contract en **Soroban**, junto con la distribución libre de los documentos a través de **BitTorrent** / IPFS y micro-mecenazgo en XLM a los autores.
+Scienstellar is a Web3 decentralized platform designed to catalogue, store, and protect scientific research papers. It replaces legacy academic publishing models with a transparent, censorship-resistant, and creator-first ecosystem built on top of the **Stellar Network** and **IPFS/Stellar Storage**.
 
 ---
 
-## 🚀 Despliegue en Vivo
+## 🌟 Core Vision & Value Proposition
 
-* **Instancia Web (Demo):** [http://194.233.76.184:1337](http://194.233.76.184:1337)
-* **Red:** Stellar Testnet
-* **Soroban Contract ID:** `CAZKCBDXOFE5HUPULIPES6IJTJZYJG3GSIRWJEVP72LJ7MOPT42YJDWD`
-* **Transacción en Explorer:** [Stellar.Expert](https://stellar.expert/explorer/testnet/tx/51075843d4ca9f303c3f539a6dd83ed99c3538e71ad3fb5a0a554e8eb4cf4020)
-* **Inspección de Contrato:** [Stellar Laboratory](https://lab.stellar.org/r/testnet/contract/CAZKCBDXOFE5HUPULIPES6IJTJZYJG3GSIRWJEVP72LJ7MOPT42YJDWD)
+Traditional academic publishing (such as *Nature* or *Science*) relies on closed paywalls, expensive processing fees, and centralized editorial control. Conversely, open preprint servers (like *arXiv*) lack native economic incentives and built-in intellectual property safeguards.
 
----
-
-## 📂 Estructura del Proyecto
-
-* `contracts/scienstellar/`: Smart contract en Soroban (Rust) con registro de versiones, hashes SHA-256/magnet y donaciones.
-* `frontend/`: Aplicación React + Vite + Tailwind con catálogo, visor P2P e integración con Freighter Wallet.
+**Scienstellar solves this by offering:**
+* **True Ownership & Direct Monetization:** Authors publish directly via their Stellar wallet. Readers make micro-donations or pay-per-access that go 100% to the author without middlemen.
+* **Web3 DOI (Digital Object Identifier):** Every paper registered on-chain receives a cryptographic identifier leveraging blockchain's core properties: **traceability, immutability, and precise timestamping**—crucial for intellectual property and establishing "first-to-publish" priority.
+* **Incentivized Decentralized Storage:** Files are stored as encrypted/obfuscated ZIP packages across a distributed node network. Nodes are rewarded in real-time based on actual *uptime* and proof-of-availability when donations occur.
+* **Topological Peer Review:** Peer review and academic lineage are established natively by linking new papers as subordinated references to existing on-chain papers (both in the smart contract and inside the document content).
 
 ---
 
-## 🛠️ Desarrollo
+## ⚙️ Architecture & Roadmap
 
-### Smart Contract
+### 1. Storage Layer
+* **Current (Testnet Phase):** Uses IPFS infrastructure via **Pinata** (`https://app.pinata.cloud/`) to handle file distribution and retrieve CIDs.
+* **Future (Mainnet Phase):** Migration to **Stellar Storage** (a dedicated L2/sidechain designed for linked storage on Stellar), introducing a one-time publisher fee based on file size and real-time node streaming rewards.
+
+### 2. Smart Contracts (Soroban / Rust)
+* Built on Stellar's smart contract platform (**Soroban**).
+* Handles paper registration, tokenized access rights, metadata binding, and automated fund routing.
+
+### 3. Frontend (React / Vite)
+* Modern decentralized application (dApp) interface.
+* Features automatic wallet synchronization (e.g., Freighter), real-time contract state polling, and race-condition handling for seamless user interaction.
+
+---
+
+## 🚀 Getting Started (Development / Testnet)
+
+If you are running the project locally or deploying to a VPS:
+
+### Prerequisites
+* Node.js & npm
+* PM2 (for production server management)
+* A Stellar-compatible wallet (like **Freighter**) configured for **Testnet**.
+
+### Installation & Run
+
 ```bash
-cd contracts/scienstellar
-stellar contract build
-```
+# Clone the repository
+git clone https://github.com/yerkobits/Scienstellar.git
+cd Scienstellar
 
-### Frontend
-```bash
-cd frontend
+# Install dependencies
 npm install
-npm run dev
+
+# Build the project
+npm run build
+
+# Serve locally or with PM2 (Vite preview)
+npx vite preview --host 0.0.0.0 --port 1337
 ```
 
 ---
 
-## 📄 Licencia
-MIT
+## 🛡️ License & Contributing
+
+Scienstellar is an open-source initiative aimed at democratizing science through Web3. Contributions, suggestions, and node operator interest are welcome!
+
+---
+*Built with Rust (Soroban) & React (Vite).*

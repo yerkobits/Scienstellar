@@ -61,30 +61,33 @@ function ScienstellarApp() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-black text-emerald-400 flex flex-col font-mono relative scanline">
       <Navbar onOpenPublishModal={() => setIsPublishModalOpen(true)} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <section className="text-center py-8 mb-6">
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight mb-4">
-            Decentralized Scientific Catalog
+        <section className="text-center py-8 mb-6 border-b border-emerald-900/40 pb-10">
+          <div className="inline-block mb-3 px-3 py-1 rounded bg-emerald-950/80 border border-emerald-700/60 text-xs text-emerald-300 font-bold uppercase tracking-widest">
+            [ Decentralized Scientific Knowledge Catalog ]
+          </div>
+          <h1 className="text-3xl sm:text-5xl font-black text-emerald-400 tracking-wider mb-4 drop-shadow-[0_0_12px_rgba(34,197,94,0.4)]">
+            Scienstellar Catalog
           </h1>
-          <p className="text-gray-400 max-w-2xl mx-auto text-base sm:text-lg">
-            Verifiable research registry powered by Stellar & Soroban. Explore open publications, support authors directly, and access encrypted research.
+          <p className="text-emerald-300/80 max-w-2xl mx-auto text-sm sm:text-base leading-relaxed">
+            Verifiable research registry powered by Stellar & Soroban. Explore open publications, protect intellectual property with on-chain timestamps, and support authors directly through encrypted node distribution.
           </p>
 
           <div className="mt-8 max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
             <input
               type="text"
-              placeholder="Search by title, author, or research field..."
+              placeholder="Search by title, author, or field..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
+              className="flex-1 bg-black border border-emerald-700/60 rounded-xl px-4 py-3 text-sm text-emerald-300 placeholder-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
             />
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="bg-black border border-emerald-700/60 rounded-xl px-4 py-3 text-sm text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="All">All Categories</option>
               <option value="Computer Science & AI">Computer Science & AI</option>
@@ -105,28 +108,28 @@ function ScienstellarApp() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-white">Registered Publications</h2>
+              <h2 className="text-lg font-bold text-emerald-400 uppercase tracking-wide">&gt; Registered Publications</h2>
               {isLoadingOnChain && (
-                <span className="text-xs text-indigo-400 animate-pulse flex items-center gap-1">
+                <span className="text-xs text-emerald-500 animate-pulse flex items-center gap-1">
                   ● Syncing with Soroban Testnet...
                 </span>
               )}
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-500 font-mono">{filteredPapers.length} papers listed</span>
+              <span className="text-xs text-emerald-600">{filteredPapers.length} papers indexed</span>
               <button
                 onClick={loadOnChainData}
                 disabled={isLoadingOnChain}
-                className="text-xs text-indigo-400 hover:text-indigo-300 underline disabled:opacity-50"
+                className="text-xs text-emerald-400 hover:text-emerald-300 underline disabled:opacity-50"
               >
-                Sync Blockchain
+                [Sync Blockchain]
               </button>
             </div>
           </div>
 
           {filteredPapers.length === 0 ? (
-            <div className="text-center py-16 bg-gray-900/50 rounded-xl border border-gray-800">
-              <p className="text-gray-400 text-sm">No research papers found matching your criteria.</p>
+            <div className="text-center py-16 bg-black/50 rounded-xl border border-emerald-900/60">
+              <p className="text-emerald-600 text-sm">No research papers found matching your criteria.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -138,9 +141,9 @@ function ScienstellarApp() {
         </section>
       </main>
 
-      <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-500 space-y-1">
-        <div>Scienstellar dApp · Running on Stellar Testnet · Open Science Initiative</div>
-        <div className="font-mono text-gray-600">Contract: {CONTRACT_ID}</div>
+      <footer className="border-t border-emerald-900/60 py-6 text-center text-xs text-emerald-600 space-y-1 mt-12 bg-black">
+        <div>Scienstellar dApp · Running on Stellar Testnet · Decentralized Scientific Catalog</div>
+        <div className="font-mono text-emerald-700">Contract ID: {CONTRACT_ID}</div>
       </footer>
 
       <SubmitPaperModal
