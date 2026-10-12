@@ -2,7 +2,7 @@
 
 > The Decentralized Scientific Knowledge Catalog powered by Stellar.
 
-Scienstellar is a Web3 decentralized platform designed to catalogue, store, and protect scientific research papers. It replaces legacy academic publishing models with a transparent, censorship-resistant, and creator-first ecosystem built on top of the **Stellar Network** and **IPFS/Stellar Storage**.
+Scienstellar is a Web3 decentralized platform designed to catalogue, store, and protect scientific research papers. It replaces legacy academic publishing models with a transparent, censorship-resistant, and creator-first ecosystem built on top of the **Stellar Network** and **Stellar Storage**.
 
 ---
 
@@ -22,7 +22,7 @@ Traditional academic publishing (such as *Nature* or *Science*) relies on closed
 
 ### 1. Storage Layer
 * **Current (Testnet Phase):** Uses IPFS infrastructure via **Pinata** (`https://app.pinata.cloud/`) to handle file distribution and retrieve CIDs.
-* **Future (Mainnet Phase):** Migration to **Stellar Storage** (a dedicated L2/sidechain designed for linked storage on Stellar), introducing a one-time publisher fee based on file size and real-time node streaming rewards.
+* **Future (Mainnet Phase):** Migration to **Stellar Storage** (we will create a dedicated L2/sidechain designed for linked storage on Stellar), introducing a one-time publisher fee based on file size and real-time node streaming rewards.
 
 ### 2. Smart Contracts (Soroban / Rust)
 * Built on Stellar's smart contract platform (**Soroban**).

@@ -10,13 +10,41 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
   const [authors, setAuthors] = useState("");
   const [abstract, setAbstract] = useState("");
   const [category, setCategory] = useState("Computer Science & AI");
-  const [minDonation, setMinDonation] = useState("5");
+  const [minDonation, setMinDonation] = useState("5.0");
   const [file, setFile] = useState(null);
   const [encryptionPassword, setEncryptionPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   if (!isOpen) return null;
+
+  const handleFileChange = (e) => {
+    const selected = e.target.files[0];
+    if (!selected) {
+      setFile(null);
+      return;
+    }
+
+    // 1. Validar extensión exclusivamente .zip
+    const isZip = selected.name.toLowerCase().endsWith(".zip") || selected.type === "application/zip" || selected.type === "application/x-zip-compressed";
+    if (!isZip) {
+      alert("Invalid format: Only .zip compressed packages are permitted.");
+      e.target.value = "";
+      setFile(null);
+      return;
+    }
+
+    // 2. Validar tamaño máximo (25 MB para el plan gratuito de Pinata)
+    const MAX_SIZE_MB = 25;
+    if (selected.size > MAX_SIZE_MB * 1024 * 1024) {
+      alert(`File size exceeds the limit (${MAX_SIZE_MB} MB). Please compress your research data.`);
+      e.target.value = "";
+      setFile(null);
+      return;
+    }
+
+    setFile(selected);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,34 +54,42 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
       return;
     }
     if (!file) {
-      alert("Please select a research file (.zip or document) to upload.");
+      alert("Please select a research .zip archive.");
       return;
     }
     if (!encryptionPassword) {
-      alert("Please specify an encryption password for the file.");
+      alert("Please specify an encryption secret.");
+      return;
+    }
+
+    // Validar formato decimal para la donación (máx 1 decimal)
+    const parsedDonation = parseFloat(minDonation);
+    if (isNaN(parsedDonation) || parsedDonation <= 0) {
+      alert("Minimum donation must be greater than 0 XLM.");
       return;
     }
 
     setIsSubmitting(true);
-    setStatusMessage("Encrypting file locally in dApp & uploading to Pinata...");
+    setStatusMessage("Encrypting archive in dApp & uploading to Pinata...");
 
     try {
+      // Sube a Pinata conservando el nombre original del archivo
       const uploadResult = await uploadEncryptedPaperToPinata(file, encryptionPassword, title);
-      setStatusMessage("File uploaded to Pinata! Registering paper on Soroban Testnet...");
+      setStatusMessage("Uploaded to Pinata! Broadcasting transaction to Soroban Testnet...");
 
       await publishPaperOnChain({
         authorAddress: walletAddress,
+        authorName: authors,
         title,
-        authors,
-        abstract,
+        abstractText: abstract,
         category,
-        minDonation,
+        minDonation: parsedDonation.toFixed(1),
         downloadUrl: uploadResult.downloadUrl,
         decryptionKey: encryptionPassword,
         sha256Hash: uploadResult.sha256Hash,
       });
 
-      setStatusMessage("Success! Research paper successfully published.");
+      setStatusMessage("Success! Research paper published on Stellar Testnet.");
       setTimeout(() => {
         setIsSubmitting(false);
         setStatusMessage("");
@@ -74,7 +110,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
         <div className="flex items-center justify-between border-b border-cyan-500/40 pb-4">
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full bg-cyan-400 animate-pulse"></span>
-            <h2 className="text-lg font-bold text-cyan-200 tracking-wide uppercase">&gt; Submit New Research Paper</h2>
+            <h2 className="text-lg font-bold text-cyan-200 tracking-wide uppercase">&gt; Register Research Paper</h2>
           </div>
           <button
             onClick={onClose}
@@ -87,9 +123,13 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="block uppercase text-cyan-400 mb-1 font-bold">Research Title</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="uppercase text-cyan-400 font-bold">Research Title</label>
+              <span className="text-[10px] text-cyan-600">{title.length} / 180</span>
+            </div>
             <input
               type="text"
+              maxLength={180}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
@@ -100,9 +140,13 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block uppercase text-cyan-400 mb-1 font-bold">Authors</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="uppercase text-cyan-400 font-bold">Authors</label>
+                <span className="text-[10px] text-cyan-600">{authors.length} / 120</span>
+              </div>
               <input
                 type="text"
+                maxLength={120}
                 value={authors}
                 onChange={(e) => setAuthors(e.target.value)}
                 className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
@@ -111,7 +155,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               />
             </div>
             <div>
-              <label className="block uppercase text-cyan-400 mb-1 font-bold">Category / Field</label>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">Category</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
@@ -133,24 +177,30 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
           </div>
 
           <div>
-            <label className="block uppercase text-cyan-400 mb-1 font-bold">Abstract</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="uppercase text-cyan-400 font-bold">Abstract</label>
+              <span className="text-[10px] text-cyan-600">{abstract.length} / 1200</span>
+            </div>
             <textarea
-              rows="3"
+              rows="4"
+              maxLength={1200}
               value={abstract}
               onChange={(e) => setAbstract(e.target.value)}
               className="w-full bg-black border border-cyan-600 rounded-xl p-3 text-xs text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-              placeholder="Brief summary of your research findings..."
+              placeholder="Summary of research methodology and outcomes (max 1200 characters)..."
               required
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block uppercase text-cyan-400 mb-1 font-bold">Min Donation (XLM)</label>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">
+                Min Donation (XLM) <span className="text-[10px] text-cyan-500 font-normal">[1 decimal]</span>
+              </label>
               <input
                 type="number"
-                step="1"
-                min="1"
+                step="0.1"
+                min="0.1"
                 value={minDonation}
                 onChange={(e) => setMinDonation(e.target.value)}
                 className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
@@ -158,27 +208,32 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               />
             </div>
             <div>
-              <label className="block uppercase text-cyan-400 mb-1 font-bold">File Encryption Password</label>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">Encryption Secret</label>
               <input
                 type="text"
+                maxLength={64}
                 value={encryptionPassword}
                 onChange={(e) => setEncryptionPassword(e.target.value)}
                 className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                placeholder="Secret key for reader decryption"
+                placeholder="Secret key for decryption"
                 required
               />
             </div>
           </div>
 
           <div className="bg-slate-950 p-4 rounded-2xl border border-cyan-800 space-y-2">
-            <label className="block uppercase text-cyan-400 font-bold">Research File (.zip or document)</label>
+            <div className="flex items-center justify-between">
+              <label className="uppercase text-cyan-400 font-bold">Research Archive (.zip only)</label>
+              <span className="text-[10px] text-emerald-400 font-mono">Max: 25 MB</span>
+            </div>
             <p className="text-[11px] text-cyan-500">
-              * Note: The dApp automatically encrypts your file into an <code className="text-cyan-300">.zip.encrypted</code> package before uploading it to Pinata with your original filename.
+              * The dApp encrypts your file preserving its original filename for Pinata Cloud storage.
             </p>
             <input
               type="file"
-              onChange={(e) => setFile(e.target.files[0])}
-              className="w-full text-xs text-cyan-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-cyan-950 file:text-cyan-300 hover:file:bg-cyan-900"
+              accept=".zip,application/zip,application/x-zip-compressed"
+              onChange={handleFileChange}
+              className="w-full text-xs text-cyan-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-cyan-950 file:text-cyan-300 hover:file:bg-cyan-900 cursor-pointer"
               required
             />
           </div>
@@ -203,7 +258,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               disabled={isSubmitting}
               className="px-6 py-2 uppercase font-bold rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-500/30 disabled:opacity-50"
             >
-              {isSubmitting ? "Publishing..." : "Upload & Register Paper"}
+              {isSubmitting ? "Processing..." : "Publish on Stellar"}
             </button>
           </div>
         </form>

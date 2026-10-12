@@ -1,132 +1,79 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
-import * as Freighter from "@stellar/freighter-api";
+import { signTransaction } from "@stellar/freighter-api";
 
 export const CONTRACT_ID = "CAZKCBDXOFE5HUPULIPES6IJTJZYJG3GSIRWJEVP72LJ7MOPT42YJDWD";
-export const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
-export const HORIZON_URL = "https://horizon-testnet.stellar.org";
+const RPC_URL = "https://soroban-testnet.stellar.org";
+const HORIZON_URL = "https://horizon-testnet.stellar.org";
 
-const rpcServer = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
-const HorizonServer = StellarSdk.Horizon ? StellarSdk.Horizon.Server : StellarSdk.Server;
-const horizonServer = new HorizonServer(HORIZON_URL);
-
-const DUMMY_ACCOUNT = new StellarSdk.Account(
-  "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
-  "0"
-);
-
-function parsePaper(rawPaper) {
-  const get = (k) => (rawPaper[k] !== undefined ? rawPaper[k] : rawPaper.get ? rawPaper.get(k) : undefined);
-
-  const id = Number(get("id") || 0);
-  const authorAddress = String(get("author_address") || "");
-  const authors = String(get("author_name") || "");
-  const title = String(get("title") || "");
-  const abstractText = String(get("abstract_text") || "");
-  const category = String(get("category") || "General Science");
-  const totalDonations = get("total_donations") ? String(get("total_donations")) : "0";
-
-  const rawVersions = get("versions") || [];
-  const versions = Array.isArray(rawVersions) ? rawVersions : [];
-  const latest = versions.length > 0 ? versions[versions.length - 1] : {};
-
-  const getVer = (k) => (latest[k] !== undefined ? latest[k] : latest.get ? latest.get(k) : "");
-  const downloadUrl = String(getVer("magnet_link") || "");
-  const rawHash = String(getVer("content_hash") || "");
-
-  let sha256Hash = rawHash;
-  let minDonation = "5";
-  let decryptionKey = "";
-  let fileName = "";
-
-  if (rawHash && (rawHash.startsWith("{") || rawHash.startsWith("["))) {
-    try {
-      const meta = JSON.parse(rawHash);
-      if (meta.hash) sha256Hash = meta.hash;
-      if (meta.minDonation) minDonation = String(meta.minDonation);
-      if (meta.decryptionKey) decryptionKey = meta.decryptionKey;
-      if (meta.fileName) fileName = meta.fileName;
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  // Ensure fileName always ends with .zip
-  if (!fileName && downloadUrl) {
-    const match = downloadUrl.match(/filename=([^&]+)/);
-    if (match) fileName = decodeURIComponent(match[1]);
-  }
-  if (!fileName) {
-    const sanitized = (title || "research-paper").toLowerCase().replace(/[^a-z0-9_-]/g, "_").slice(0, 30);
-    fileName = `${sanitized}.zip`;
-  }
-  if (!fileName.toLowerCase().endsWith(".zip")) {
-    fileName = `${fileName.replace(/\.[^/.]+$/, "")}.zip`;
-  }
-
-  return {
-    id: String(id),
-    title,
-    authors,
-    abstract: abstractText,
-    category,
-    authorAddress,
-    minDonation,
-    downloadUrl,
-    sha256Hash,
-    decryptionKey,
-    fileName,
-    totalDonations,
-    isOnChain: true,
-  };
-}
+const rpcServer = new StellarSdk.rpc.Server(RPC_URL);
+const horizonServer = new StellarSdk.Horizon.Server(HORIZON_URL);
 
 export async function fetchOnChainPapers() {
   try {
     const contract = new StellarSdk.Contract(CONTRACT_ID);
+    const networkPassphrase = StellarSdk.Networks.TESTNET;
 
-    const countTx = new StellarSdk.TransactionBuilder(DUMMY_ACCOUNT, {
-      fee: "100",
-      networkPassphrase: StellarSdk.Networks.TESTNET,
-    })
-      .addOperation(contract.call("get_papers_count"))
+    const account = await horizonServer.loadAccount("GCMO6JPLMT2WT4H6I2HJ4J6275WZ2A6VEV2W4JORZUL7XA6Q6L2UVZYV").catch(() => null);
+    if (!account) return [];
+
+    const countOp = contract.call("get_papers_count");
+    const countTx = new StellarSdk.TransactionBuilder(account, { fee: "100", networkPassphrase })
+      .addOperation(countOp)
       .setTimeout(30)
       .build();
 
-    const simCount = await rpcServer.simulateTransaction(countTx);
-    if (!StellarSdk.rpc.Api.isSimulationSuccess(simCount)) {
-      console.warn("Could not simulate get_papers_count:", simCount);
-      return [];
+    const countSim = await rpcServer.simulateTransaction(countTx);
+    let totalPapers = 0;
+    if (StellarSdk.rpc.Api.isSimulationSuccess(countSim)) {
+      totalPapers = Number(StellarSdk.scValToNative(countSim.result.retval) || 0);
     }
 
-    const count = Number(StellarSdk.scValToNative(simCount.result.retval));
-    if (!count || count <= 0) {
-      return [];
-    }
+    if (totalPapers <= 0) return [];
 
     const papers = [];
-    for (let i = count; i >= 1; i--) {
+    for (let i = 1; i <= totalPapers; i++) {
       try {
-        const paperTx = new StellarSdk.TransactionBuilder(DUMMY_ACCOUNT, {
-          fee: "100",
-          networkPassphrase: StellarSdk.Networks.TESTNET,
-        })
-          .addOperation(contract.call("get_paper", StellarSdk.nativeToScVal(i, { type: "u32" })))
+        const getOp = contract.call("get_paper", StellarSdk.nativeToScVal(i, { type: "u32" }));
+        const getTx = new StellarSdk.TransactionBuilder(account, { fee: "100", networkPassphrase })
+          .addOperation(getOp)
           .setTimeout(30)
           .build();
 
-        const simPaper = await rpcServer.simulateTransaction(paperTx);
-        if (StellarSdk.rpc.Api.isSimulationSuccess(simPaper)) {
-          const raw = StellarSdk.scValToNative(simPaper.result.retval);
-          papers.push(parsePaper(raw));
+        const getSim = await rpcServer.simulateTransaction(getTx);
+        if (StellarSdk.rpc.Api.isSimulationSuccess(getSim)) {
+          const item = StellarSdk.scValToNative(getSim.result.retval);
+          if (item) {
+            let meta = {};
+            const rawHash = item.content_hash || item.metadata || "{}";
+            try {
+              meta = JSON.parse(rawHash);
+            } catch {
+              meta = { minDonation: "5", decryptionKey: "", hash: rawHash };
+            }
+            papers.push({
+              id: String(i),
+              sdoi: `S-DOI 2026${String(i).padStart(3, "0")}`,
+              title: item.title || "Untitled Paper",
+              authors: item.author_name || "Anonymous",
+              abstract: item.abstract_text || "",
+              category: item.category || "General Science",
+              downloadUrl: item.magnet_link || item.download_url || "",
+              minDonation: String(meta.minDonation || "5"),
+              decryptionKey: meta.decryptionKey || "",
+              sha256Hash: meta.hash || "",
+              authorAddress: item.author ? item.author.toString() : "",
+              isOnChain: true,
+            });
+          }
         }
-      } catch (err) {
-        console.error(`Failed to load paper #${i} from contract:`, err);
+      } catch (e) {
+        console.warn(`Could not fetch paper #${i}:`, e);
       }
     }
 
     return papers;
   } catch (err) {
-    console.error("fetchOnChainPapers error:", err);
+    console.error("Failed to fetch on-chain papers:", err);
     return [];
   }
 }
@@ -141,7 +88,6 @@ export async function publishPaperOnChain({
   sha256Hash,
   minDonation,
   decryptionKey,
-  fileName,
 }) {
   let account;
   try {
@@ -156,9 +102,8 @@ export async function publishPaperOnChain({
 
   const metadataPayload = JSON.stringify({
     hash: sha256Hash || "",
-    minDonation: minDonation || "5",
+    minDonation: String(minDonation || "5"),
     decryptionKey: decryptionKey || "",
-    fileName: fileName || "research-archive.zip",
   });
 
   const tx = new StellarSdk.TransactionBuilder(account, {
@@ -168,12 +113,11 @@ export async function publishPaperOnChain({
     .addOperation(
       contract.call(
         "publish_paper",
-        new StellarSdk.Address(authorAddress).toScVal(),
-        StellarSdk.nativeToScVal(authorName, { type: "string" }),
-        StellarSdk.nativeToScVal(title, { type: "string" }),
-        StellarSdk.nativeToScVal(abstractText, { type: "string" }),
-        StellarSdk.nativeToScVal(category, { type: "string" }),
-        StellarSdk.nativeToScVal(downloadUrl, { type: "string" }),
+        StellarSdk.nativeToScVal(authorName || "Anonymous", { type: "string" }),
+        StellarSdk.nativeToScVal(title || "Untitled", { type: "string" }),
+        StellarSdk.nativeToScVal(abstractText || "No abstract provided.", { type: "string" }),
+        StellarSdk.nativeToScVal(category || "General", { type: "string" }),
+        StellarSdk.nativeToScVal(downloadUrl || "", { type: "string" }),
         StellarSdk.nativeToScVal(metadataPayload, { type: "string" })
       )
     )
@@ -188,8 +132,8 @@ export async function publishPaperOnChain({
   const assemble = StellarSdk.rpc?.assembleTransaction || StellarSdk.assembleTransaction;
   const preparedTx = assemble(tx, sim).build();
 
-  const signFn = Freighter.signTransaction || Freighter.default?.signTransaction;
-  const signedResult = await signFn(preparedTx.toXDR(), {
+  // Firma oficial limpia usando @stellar/freighter-api
+  const signedResult = await signTransaction(preparedTx.toXDR(), {
     network: "TESTNET",
     networkPassphrase: StellarSdk.Networks.TESTNET,
   });
@@ -198,7 +142,7 @@ export async function publishPaperOnChain({
     throw new Error(signedResult.error);
   }
 
-  const signedXdr = typeof signedResult === "string" ? signedResult : signedResult?.signedTxXdr || signedResult;
+  const signedXdr = typeof signedResult === "string" ? signedResult : (signedResult?.signedTxXdr || signedResult);
   if (!signedXdr) {
     throw new Error("Transaction signature was declined in Freighter.");
   }

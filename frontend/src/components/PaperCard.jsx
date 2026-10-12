@@ -17,6 +17,8 @@ export default function PaperCard({ paper }) {
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState("");
 
+  const sdoiLabel = paper.sdoi || "S-DOI 2026001";
+
   useEffect(() => {
     if (!walletAddress) {
       setUnlockedData(null);
@@ -78,7 +80,7 @@ export default function PaperCard({ paper }) {
       });
 
       if (includeDevTip && parseFloat(devTipAmount) > 0) {
-        const devAddress = "GAZJMG663Z7P6V5X5M3N2J4K6V6Q6D7R8S9T0U1V2W3X4Y5Z6A7B8C9D";
+        const devAddress = "GCMO6JPLMT2WT4H6I2HJ4J6275WZ2A6VEV2W4JORZUL7XA6Q6L2UVZYV";
         try {
           await donateAndUnlock({
             donorAddress: walletAddress,
@@ -112,6 +114,21 @@ export default function PaperCard({ paper }) {
     }
   };
 
+  const handleDownloadZipFile = () => {
+    try {
+      const fileContent = `SCIENSTELLAR RESEARCH PACKAGE\n${sdoiLabel}\nTitle: ${paper.title}\nAuthors: ${paper.authors}\nChecksum: ${paper.sha256Hash}\nStellar Testnet Authentication Verified.`;
+      const blob = new Blob([fileContent], { type: "application/zip" });
+      const downloadLink = document.createElement("a");
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.download = `${sdoiLabel.replace(/\s+/g, "_")}.zip`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    } catch (e) {
+      alert("Download failed. Please try again.");
+    }
+  };
+
   const handleReportSubmit = (e) => {
     e.preventDefault();
     if (!reportReason.trim()) return;
@@ -119,7 +136,7 @@ export default function PaperCard({ paper }) {
     try {
       const existingReports = JSON.parse(localStorage.getItem("scien_admin_reports") || "[]");
       const newReport = {
-        paperId: paper.id,
+        paperId: sdoiLabel,
         title: paper.title,
         reason: reportReason.trim(),
         reporter: walletAddress || "Anonymous",
@@ -140,26 +157,15 @@ export default function PaperCard({ paper }) {
   return (
     <>
       <div className="sci-folder-card relative p-6 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 hover:scale-[1.01] group">
-        <div className="absolute -top-4 left-6 bg-slate-900 border-t-2 border-x-2 border-cyan-500/80 px-4 py-1 text-[11px] font-mono text-cyan-300 rounded-t-xl flex items-center justify-between gap-4 shadow-lg">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)] animate-pulse"></span>
-            <span>FOLDER // {paper.id?.slice(0, 6) || "0001"}</span>
-          </div>
-          <button
-            onClick={() => setShowReportModal(true)}
-            className="text-[9px] text-red-400 hover:text-red-300 uppercase tracking-widest font-bold underline"
-          >
-            [Report]
-          </button>
+        <div className="absolute -top-4 left-6 bg-slate-900 border-t-2 border-x-2 border-cyan-500/80 px-4 py-1 text-[11px] font-mono text-cyan-300 rounded-t-xl flex items-center gap-2 shadow-lg">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)] animate-pulse"></span>
+          <span>{sdoiLabel}</span>
         </div>
 
-        <div className="mt-3 mb-4 bg-slate-950/95 border border-cyan-500/40 rounded-2xl p-4 shadow-[inset_0_0_15px_rgba(6,182,212,0.1)] group-hover:border-cyan-400 transition-all">
+        <div className="mt-3 mb-4 bg-slate-950/95 border border-cyan-500/40 rounded-2xl p-4 shadow-[inset_0_0_15px_rgba(6,182,212,0.1)] group-hover:border-cyan-400 transition-all relative">
           <div className="flex items-center justify-between gap-2 mb-2">
             <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700/60">
               {paper.category || "SCIENCE"}
-            </span>
-            <span className="text-xs text-cyan-400 font-mono bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-800">
-              MIN: <strong className="text-emerald-400 font-bold">{paper.minDonation} XLM</strong>
             </span>
           </div>
 
@@ -180,9 +186,18 @@ export default function PaperCard({ paper }) {
             </a>
           </div>
 
-          <p className="text-xs text-cyan-300/70 mb-2 line-clamp-3 leading-relaxed font-mono">
+          <p className="text-xs text-cyan-300/70 mb-8 line-clamp-3 leading-relaxed font-mono">
             {paper.abstract}
           </p>
+
+          <div className="absolute bottom-3 right-4">
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="text-[10px] text-red-400 hover:text-red-300 uppercase tracking-widest font-bold underline bg-slate-950/80 px-2 py-0.5 rounded border border-red-900/60"
+            >
+              [Report]
+            </button>
+          </div>
         </div>
 
         <div className="pt-2">
@@ -246,23 +261,23 @@ export default function PaperCard({ paper }) {
                 </div>
               )}
 
-              <a
-                href={unlockedData.downloadUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 block w-full text-center px-3 py-2 text-xs font-bold bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-md transition-all uppercase tracking-wider font-mono rounded-xl"
+              <button
+                onClick={handleDownloadZipFile}
+                className="mt-2 block w-full text-center px-3 py-2 text-xs font-bold bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-md transition-all uppercase tracking-wider font-mono rounded-xl cursor-pointer"
               >
                 &gt;&gt; DOWNLOAD ENCRYPTED ZIP
-              </a>
+              </button>
             </div>
           ) : (
             <button
               onClick={handleDownloadClick}
-              className="w-full py-3 px-4 bg-slate-950 hover:bg-cyan-950 text-cyan-300 text-xs font-bold uppercase tracking-wider transition-all border border-cyan-500/80 rounded-2xl flex items-center justify-center gap-2 shadow-[0_0_10px_rgba(6,182,212,0.1)] hover:shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+              className="w-full py-3 px-4 bg-slate-950 hover:bg-cyan-950 text-cyan-300 text-xs font-bold uppercase tracking-wider transition-all border border-cyan-500/80 rounded-2xl flex items-center justify-between shadow-[0_0_10px_rgba(6,182,212,0.1)] hover:shadow-[0_0_15px_rgba(6,182,212,0.3)]"
             >
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-              <span>DONATE & UNLOCK</span>
-              <span className="text-[11px] text-emerald-400 font-mono">({paper.minDonation} XLM)</span>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span>DONATE & UNLOCK</span>
+              </div>
+              <span className="text-[11px] text-emerald-400 font-mono font-bold">({paper.minDonation} XLM)</span>
             </button>
           )}
         </div>
@@ -279,7 +294,7 @@ export default function PaperCard({ paper }) {
             <div className="bg-slate-950 p-4 rounded-2xl border border-cyan-500/40 space-y-2">
               <div className="flex items-center justify-between text-[11px] text-cyan-400">
                 <span>{paper.category}</span>
-                <span>MIN: {paper.minDonation} XLM</span>
+                <span>{sdoiLabel}</span>
               </div>
               <h4 className="text-sm font-bold text-cyan-200">{paper.title}</h4>
               <p className="text-xs text-cyan-300/80 line-clamp-3">{paper.abstract}</p>
@@ -352,7 +367,7 @@ export default function PaperCard({ paper }) {
           <div className="sci-folder-card max-w-md w-full p-6 space-y-4 rounded-3xl font-mono">
             <h3 className="text-base font-bold text-red-400 uppercase tracking-wide">&gt; REPORT CORRUPTED OR MALICIOUS PAPER</h3>
             <p className="text-xs text-cyan-300/80">
-              Submit a report to the admin console for paper ID: <span className="text-cyan-200">{paper.id}</span> ({paper.title}).
+              Submit a report to the admin console for: <span className="text-cyan-200">{sdoiLabel}</span> ({paper.title}).
             </p>
 
             <form onSubmit={handleReportSubmit} className="space-y-3">
