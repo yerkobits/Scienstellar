@@ -7,111 +7,8 @@ import AdminView from "./components/AdminView";
 import { WalletProvider } from "./context/WalletContext";
 import { fetchOnChainPapers, CONTRACT_ID } from "./services/contract";
 
-const DEV_ADDRESS = "GCMO6JPLMT2WT4H6I2HJ4J6275WZ2A6VEV2W4JORZUL7XA6Q6L2UVZYV";
-
-const FALLBACK_PAPERS = [
-  {
-    id: "demo-1",
-    sdoi: "S-DOI 2026001",
-    title: "Quantum Cryptography in Stellar L2 State Channels",
-    authors: "Dr. Alistair Vance, Prof. Elena Rostova",
-    abstract: "An exploration of post-quantum cryptographic primitives integrated into Stellar Layer-2 state channels to ensure long-term transaction secrecy and verifiable academic authorship.",
-    category: "Computer Science & AI",
-    sha256Hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    authorAddress: DEV_ADDRESS,
-    minDonation: "5",
-    downloadUrl: "",
-    decryptionKey: "scien-aes256-vance-2026",
-    isOnChain: false,
-  },
-  {
-    id: "demo-2",
-    sdoi: "S-DOI 2026002",
-    title: "Zero-Knowledge Proofs for Anonymous Peer-Review Systems",
-    authors: "Dr. Marcus Thorne, Dr. S. K. Chen",
-    abstract: "Proposing a trustless peer-review framework where reviewers remain completely anonymous via zk-SNARKs while cryptographically proving their domain expertise on-chain.",
-    category: "Computer Science & AI",
-    sha256Hash: "8f434346648f6b96df89ffa9b7852b855e3b0c44298fc1c149afbf4c8996fb",
-    authorAddress: DEV_ADDRESS,
-    minDonation: "10",
-    downloadUrl: "",
-    decryptionKey: "scien-zkp-review-2026",
-    isOnChain: false,
-  },
-  {
-    id: "demo-3",
-    sdoi: "S-DOI 2026003",
-    title: "Spectroscopic Analysis of Exoplanet Atmospheric Biosignatures",
-    authors: "Dr. Valeria Ortiz, Astrobiology Research Group",
-    abstract: "High-resolution transmission spectroscopy data revealing anomalous methane and oxygen disequilibrium in the terminator zone of super-Earth LHS 1140 b.",
-    category: "Physics & Astronomy",
-    sha256Hash: "298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855e3b0c44",
-    authorAddress: DEV_ADDRESS,
-    minDonation: "15",
-    downloadUrl: "",
-    decryptionKey: "scien-astro-lhs1140-2026",
-    isOnChain: false,
-  },
-  {
-    id: "demo-4",
-    sdoi: "S-DOI 2026004",
-    title: "CRISPR-Mediated Epigenetic Silencing in Oncogenic Pathways",
-    authors: "Dr. Naomi Takahashi, BioTech Lab Tokyo",
-    abstract: "Demonstrating targeted DNA methylation using deactivated Cas9 enzymes to persistently silence metastatic gene expression without introducing double-strand breaks.",
-    category: "Biology & Genetics",
-    sha256Hash: "c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855e3b0c44298fc",
-    authorAddress: DEV_ADDRESS,
-    minDonation: "8",
-    downloadUrl: "",
-    decryptionKey: "scien-crispr-epigenetics-2026",
-    isOnChain: false,
-  },
-  {
-    id: "demo-5",
-    sdoi: "S-DOI 2026005",
-    title: "Decentralized Autonomous Funding Models for Open Science",
-    authors: "Dr. Julian Sterling, Oxford Economics",
-    abstract: "Evaluating quadratic funding mechanisms and smart contract automated grants in replacing traditional institutional grant writing for foundational theoretical physics.",
-    category: "Economics & Finance",
-    sha256Hash: "4c8996fb92427ae41e4649b934ca495991b7852b855e3b0c44298fc1c149afbf",
-    authorAddress: DEV_ADDRESS,
-    minDonation: "5",
-    downloadUrl: "",
-    decryptionKey: "scien-econ-quadfunding-2026",
-    isOnChain: false,
-  },
-  {
-    id: "demo-6",
-    sdoi: "S-DOI 2026006",
-    title: "Room-Temperature Superconductivity in Nitrogen-Doped Lutetium Hydrides",
-    authors: "Dr. K. R. Harrison, National Physics Laboratory",
-    abstract: "Replication study and phase-diagram mapping of compressed hydrides exhibiting zero electrical resistance at ambient thermal conditions under high magnetic fields.",
-    category: "Chemistry & Materials",
-    sha256Hash: "b855e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852",
-    authorAddress: DEV_ADDRESS,
-    minDonation: "20",
-    downloadUrl: "",
-    decryptionKey: "scien-supercon-lutetium-2026",
-    isOnChain: false,
-  },
-  {
-    id: "demo-7",
-    sdoi: "S-DOI 2026007",
-    title: "Machine Learning Prediction of Deep-Ocean Thermohaline Circulation Shifts",
-    authors: "Dr. Henrik Lindqvist, Marine Climate Institute",
-    abstract: "Utilizing transformer neural networks trained on 50 years of Argo float salinity profiles to forecast tipping points in Atlantic meridional overturning circulation.",
-    category: "Environmental & Climate Science",
-    sha256Hash: "92427ae41e4649b934ca495991b7852b855e3b0c44298fc1c149afbf4c89",
-    authorAddress: DEV_ADDRESS,
-    minDonation: "12",
-    downloadUrl: "",
-    decryptionKey: "scien-climate-ocean-2026",
-    isOnChain: false,
-  },
-];
-
 function ScienstellarApp() {
-  const [papers, setPapers] = useState(FALLBACK_PAPERS);
+  const [papers, setPapers] = useState([]);
   const [isLoadingOnChain, setIsLoadingOnChain] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -130,11 +27,7 @@ function ScienstellarApp() {
   useEffect(() => {
     const handleRouteCheck = () => {
       const path = window.location.pathname;
-      if (path.includes("/admin")) {
-        setIsAdminRoute(true);
-      } else {
-        setIsAdminRoute(false);
-      }
+      setIsAdminRoute(path.includes("/admin"));
     };
     handleRouteCheck();
     window.addEventListener("popstate", handleRouteCheck);
@@ -145,20 +38,10 @@ function ScienstellarApp() {
     setIsLoadingOnChain(true);
     try {
       const onChainList = await fetchOnChainPapers();
-      if (onChainList && onChainList.length > 0) {
-        const sanitized = onChainList.map((p, idx) => {
-          const sdoi = p.sdoi || `S-DOI 2026${String(idx + 1).padStart(3, "0")}`;
-          return { ...p, sdoi };
-        });
-
-        const combined = [...sanitized, ...FALLBACK_PAPERS.filter(demo => !sanitized.some(s => s.title === demo.title))];
-        setPapers(combined);
-      } else {
-        setPapers(FALLBACK_PAPERS);
-      }
+      setPapers(onChainList || []);
     } catch (err) {
       console.error("Error loading on-chain papers:", err);
-      setPapers(FALLBACK_PAPERS);
+      setPapers([]);
     } finally {
       setIsLoadingOnChain(false);
     }
@@ -173,7 +56,7 @@ function ScienstellarApp() {
     const matchesSearch =
       p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.authors.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sdoi.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.sdoi && p.sdoi.toLowerCase().includes(searchQuery.toLowerCase())) ||
       p.category.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesCategory =
@@ -213,7 +96,7 @@ function ScienstellarApp() {
           <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-xs">
             <button
               onClick={() => setIsHowItWorksOpen(true)}
-              className="text-emerald-400 hover:text-emerald-300 underline font-bold bg-emerald-950/60 px-3 py-1 border border-emerald-600 rounded-lg"
+              className="text-emerald-400 hover:text-emerald-300 underline font-bold bg-emerald-950/60 px-3 py-1 border border-emerald-600 rounded-lg cursor-pointer"
             >
               &gt;&gt; How It Works
             </button>
@@ -263,7 +146,7 @@ function ScienstellarApp() {
               <button
                 onClick={loadOnChainData}
                 disabled={isLoadingOnChain}
-                className="text-xs text-emerald-400 hover:text-indigo-300 underline disabled:opacity-50 font-mono"
+                className="text-xs text-emerald-400 hover:text-indigo-300 underline disabled:opacity-50 font-mono cursor-pointer"
               >
                 [Sync Blockchain]
               </button>
@@ -272,7 +155,7 @@ function ScienstellarApp() {
 
           {filteredPapers.length === 0 ? (
             <div className="text-center py-16 bg-black/60 rounded-3xl border-2 border-emerald-800/80">
-              <p className="text-emerald-600 text-sm font-mono">No research papers found matching your criteria.</p>
+              <p className="text-emerald-600 text-sm font-mono">No research papers found on Stellar Testnet.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pt-4">
@@ -298,10 +181,10 @@ function ScienstellarApp() {
           </a>
         </div>
         <div className="pt-1 flex items-center justify-center gap-4 text-[11px]">
-          <button onClick={() => setIsHowItWorksOpen(true)} className="text-emerald-400 hover:text-emerald-200 underline">How It Works</button>
+          <button onClick={() => setIsHowItWorksOpen(true)} className="text-emerald-400 hover:text-emerald-200 underline cursor-pointer">How It Works</button>
           <a href="https://github.com/yerkobits/Scienstellar" target="_blank" rel="noreferrer" className="text-cyan-500 hover:text-cyan-300 underline">Sourcecode</a>
           <a href="https://demo.stellarpassport.xyz/builder/yerkobits" target="_blank" rel="noreferrer" className="text-cyan-500 hover:text-cyan-300 underline">Dev Passport</a>
-          <a href="/admin" onClick={(e) => { e.preventDefault(); window.history.pushState({}, "", "/admin"); window.dispatchEvent(new PopStateEvent('popstate')); }} className="text-amber-400 hover:text-amber-300 underline font-bold">[Admin Panel]</a>
+          <a href="/admin" onClick={(e) => { e.preventDefault(); window.history.pushState({}, "", "/admin"); window.dispatchEvent(new PopStateEvent('popstate')); }} className="text-amber-400 hover:text-amber-300 underline font-bold cursor-pointer">[Admin Panel]</a>
         </div>
       </footer>
 

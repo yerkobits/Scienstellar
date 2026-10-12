@@ -1,82 +1,73 @@
-import CryptoJS from "crypto-js";
-import { configure, ZipReader, ZipWriter, BlobReader, BlobWriter } from "@zip.js/zip.js";
+// Utilidad de cifrado simétrico AES-GCM 256-bit usando Web Crypto API nativo del navegador
 
-// Disable web workers to ensure direct in-memory execution in Vite
-configure({ useWebWorkers: false });
-
-export async function computeFileSHA256(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const wordArray = CryptoJS.lib.WordArray.create(e.target.result);
-        const hash = CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex);
-        resolve(hash);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.onerror = (err) => reject(err);
-    reader.readAsArrayBuffer(file);
-  });
+async function getKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+  return window.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
 }
 
-/**
- * Generates a clean 24-character extraction password (no prefix)
- */
-export function generateDecryptionKey() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  let key = "";
-  for (let i = 0; i < 24; i++) {
-    key += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return key;
-}
+export async function encryptZipFile(file, password) {
+  const fileBuffer = await file.arrayBuffer();
 
-/**
- * Takes the uploaded ZIP file, repacks all its contents into a standard
- * password-protected ZIP archive (ZipCrypto standard, compatible with all OS).
- */
-export async function createPasswordProtectedZip(uploadedZipFile, password) {
-  const sha256Hash = await computeFileSHA256(uploadedZipFile);
-  let protectedZipBlob;
+  // Calcular checksum SHA-256 del archivo original
+  const hashBuffer = await window.crypto.subtle.digest("SHA-256", fileBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const sha256Hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-  try {
-    const zipReader = new ZipReader(new BlobReader(uploadedZipFile));
-    const entries = await zipReader.getEntries();
+  // Salt e IV aleatorios
+  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
 
-    const zipWriter = new ZipWriter(new BlobWriter("application/zip"));
+  const key = await getKey(password, salt);
+  const encryptedContent = await window.crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv },
+    key,
+    fileBuffer
+  );
 
-    for (const entry of entries) {
-      if (entry.directory) {
-        await zipWriter.add(entry.filename, undefined, { directory: true });
-      } else {
-        const entryDataBlob = await entry.getData(new BlobWriter());
-        await zipWriter.add(entry.filename, new BlobReader(entryDataBlob), {
-          password: password,
-          zipCrypto: true, // Universal standard, identical to 'zip -e' in Linux Terminal
-        });
-      }
-    }
+  // Empaquetar: [16 bytes salt] + [12 bytes IV] + [contenido cifrado]
+  const combined = new Uint8Array(salt.length + iv.length + encryptedContent.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.length);
+  combined.set(new Uint8Array(encryptedContent), salt.length + iv.length);
 
-    await zipReader.close();
-    protectedZipBlob = await zipWriter.close();
-  } catch (err) {
-    console.warn("Could not extract entries, wrapping archive with password:", err);
-    // Fallback: package the entire ZIP inside a protected ZIP envelope
-    const zipWriter = new ZipWriter(new BlobWriter("application/zip"));
-    await zipWriter.add(uploadedZipFile.name, new BlobReader(uploadedZipFile), {
-      password: password,
-      zipCrypto: true,
-    });
-    protectedZipBlob = await zipWriter.close();
-  }
-
+  const encryptedBlob = new Blob([combined], { type: "application/octet-stream" });
   return {
-    zipBlob: protectedZipBlob,
-    sha256Hash,
-    fileName: uploadedZipFile.name.toLowerCase().endsWith(".zip")
-      ? uploadedZipFile.name
-      : `${uploadedZipFile.name}.zip`,
+    encryptedFile: new File([encryptedBlob], file.name, { type: "application/octet-stream" }),
+    sha256Hash: sha256Hex,
   };
+}
+
+export async function decryptZipBuffer(arrayBuffer, password) {
+  const bytes = new Uint8Array(arrayBuffer);
+  if (bytes.length < 28) throw new Error("Paquete corrupto o incompleto.");
+
+  const salt = bytes.slice(0, 16);
+  const iv = bytes.slice(16, 28);
+  const data = bytes.slice(28);
+
+  const key = await getKey(password, salt);
+  const decryptedBuffer = await window.crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: iv },
+    key,
+    data
+  );
+  return new Blob([decryptedBuffer], { type: "application/zip" });
 }

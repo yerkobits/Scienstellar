@@ -11,7 +11,7 @@
   "dependencies": {
     "@stellar/freighter-api": "^2.0.0",
     "@stellar/stellar-sdk": "^17.2.1",
-    "@zip.js/zip.js": "^2.22.1",
+    "@zip.js/zip.js": "^2.23.0",
     "crypto-js": "^4.2.0",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useWallet } from "../context/WalletContext";
-import { uploadEncryptedPaperToPinata } from "../services/pinata";
+import { createEncryptedZipPackage } from "../services/zipPackage";
+import { uploadRawFileToPinata } from "../services/pinata";
 import { publishPaperOnChain } from "../services/contract";
 
 export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
@@ -25,19 +26,19 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
       return;
     }
 
-    // 1. Validar extensión exclusivamente .zip
-    const isZip = selected.name.toLowerCase().endsWith(".zip") || selected.type === "application/zip" || selected.type === "application/x-zip-compressed";
+    const isZip = selected.name.toLowerCase().endsWith(".zip") || 
+                  selected.type === "application/zip" || 
+                  selected.type === "application/x-zip-compressed";
     if (!isZip) {
-      alert("Invalid format: Only .zip compressed packages are permitted.");
+      alert("Invalid format: Only .zip files are allowed.");
       e.target.value = "";
       setFile(null);
       return;
     }
 
-    // 2. Validar tamaño máximo (25 MB para el plan gratuito de Pinata)
     const MAX_SIZE_MB = 25;
     if (selected.size > MAX_SIZE_MB * 1024 * 1024) {
-      alert(`File size exceeds the limit (${MAX_SIZE_MB} MB). Please compress your research data.`);
+      alert(`File size exceeds limit (${MAX_SIZE_MB} MB).`);
       e.target.value = "";
       setFile(null);
       return;
@@ -58,11 +59,10 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
       return;
     }
     if (!encryptionPassword) {
-      alert("Please specify an encryption secret.");
+      alert("Please specify a ZIP password.");
       return;
     }
 
-    // Validar formato decimal para la donación (máx 1 decimal)
     const parsedDonation = parseFloat(minDonation);
     if (isNaN(parsedDonation) || parsedDonation <= 0) {
       alert("Minimum donation must be greater than 0 XLM.");
@@ -70,13 +70,18 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
     }
 
     setIsSubmitting(true);
-    setStatusMessage("Encrypting archive in dApp & uploading to Pinata...");
 
     try {
-      // Sube a Pinata conservando el nombre original del archivo
-      const uploadResult = await uploadEncryptedPaperToPinata(file, encryptionPassword, title);
-      setStatusMessage("Uploaded to Pinata! Broadcasting transaction to Soroban Testnet...");
+      // 1. Cifrar en memoria
+      setStatusMessage("1/3 Encrypting archive container with password...");
+      const { packagedFile, sha256Hash, filename } = await createEncryptedZipPackage(file, encryptionPassword);
 
+      // 2. Subir a Pinata para tener la URL exacta de IPFS
+      setStatusMessage("2/3 Uploading encrypted package to Pinata Cloud...");
+      const pinataDownloadUrl = await uploadRawFileToPinata(packagedFile, filename, title);
+
+      // 3. Confirmar con Freighter on-chain
+      setStatusMessage("3/3 Requesting transaction in Freighter (sign & submit)...");
       await publishPaperOnChain({
         authorAddress: walletAddress,
         authorName: authors,
@@ -84,12 +89,12 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
         abstractText: abstract,
         category,
         minDonation: parsedDonation.toFixed(1),
-        downloadUrl: uploadResult.downloadUrl,
+        downloadUrl: pinataDownloadUrl,
         decryptionKey: encryptionPassword,
-        sha256Hash: uploadResult.sha256Hash,
+        sha256Hash: sha256Hash,
       });
 
-      setStatusMessage("Success! Research paper published on Stellar Testnet.");
+      setStatusMessage("✓ Research publication complete and registered!");
       setTimeout(() => {
         setIsSubmitting(false);
         setStatusMessage("");
@@ -97,8 +102,13 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
         onClose();
       }, 1500);
     } catch (err) {
-      console.error("Submission error:", err);
-      alert("Error publishing paper: " + (err.message || err));
+      console.error("Submission failed:", err);
+      const msg = err.message || String(err);
+      if (msg.includes("declined") || msg.includes("User rejected") || msg.includes("cancel")) {
+        alert("Transaction was cancelled in Freighter.");
+      } else {
+        alert("Publication halted: " + msg);
+      }
       setIsSubmitting(false);
       setStatusMessage("");
     }
@@ -187,7 +197,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               value={abstract}
               onChange={(e) => setAbstract(e.target.value)}
               className="w-full bg-black border border-cyan-600 rounded-xl p-3 text-xs text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-              placeholder="Summary of research methodology and outcomes (max 1200 characters)..."
+              placeholder="Summary of research findings..."
               required
             />
           </div>
@@ -208,14 +218,14 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               />
             </div>
             <div>
-              <label className="block uppercase text-cyan-400 mb-1 font-bold">Encryption Secret</label>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">ZIP Password</label>
               <input
                 type="text"
                 maxLength={64}
                 value={encryptionPassword}
                 onChange={(e) => setEncryptionPassword(e.target.value)}
                 className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                placeholder="Secret key for decryption"
+                placeholder="Password to access ZIP contents"
                 required
               />
             </div>
@@ -226,9 +236,6 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               <label className="uppercase text-cyan-400 font-bold">Research Archive (.zip only)</label>
               <span className="text-[10px] text-emerald-400 font-mono">Max: 25 MB</span>
             </div>
-            <p className="text-[11px] text-cyan-500">
-              * The dApp encrypts your file preserving its original filename for Pinata Cloud storage.
-            </p>
             <input
               type="file"
               accept=".zip,application/zip,application/x-zip-compressed"
@@ -258,7 +265,7 @@ export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
               disabled={isSubmitting}
               className="px-6 py-2 uppercase font-bold rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-500/30 disabled:opacity-50"
             >
-              {isSubmitting ? "Processing..." : "Publish on Stellar"}
+              {isSubmitting ? "Processing..." : "Sign & Publish on Stellar"}
             </button>
           </div>
         </form>

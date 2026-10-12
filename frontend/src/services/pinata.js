@@ -1,58 +1,43 @@
-export async function uploadEncryptedPaperToPinata(file, password, title) {
-  // Conservar exactamente el nombre original del archivo .zip sin sufijos
-  const originalName = file.name || "paper-package.zip";
-
+export async function uploadRawFileToPinata(file, filename, title) {
+  const pinataJwt = import.meta.env.VITE_PINATA_JWT || "";
   const pinataApiKey = import.meta.env.VITE_PINATA_API_KEY || "";
   const pinataSecretKey = import.meta.env.VITE_PINATA_SECRET_KEY || "";
 
-  if (pinataApiKey && pinataSecretKey) {
-    try {
-      const formData = new FormData();
-      formData.append("file", file, originalName);
-
-      const metadata = JSON.stringify({
-        name: originalName,
-        keyvalues: {
-          title: title,
-          encrypted: "true",
-        }
-      });
-      formData.append("pinataMetadata", metadata);
-
-      const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
-        method: "POST",
-        headers: {
-          pinata_api_key: pinataApiKey,
-          pinata_secret_apikey: pinataSecretKey,
-        },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to pin file to Pinata API");
-      }
-
-      const json = await res.json();
-      const ipfsHash = json.IpfsHash;
-      const sha256Hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-
-      return {
-        downloadUrl: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-        sha256Hash,
-        filename: originalName,
-      };
-    } catch (err) {
-      console.warn("Pinata upload notice:", err);
-    }
+  if (!pinataJwt && !(pinataApiKey && pinataSecretKey)) {
+    throw new Error("Credenciales de Pinata (VITE_PINATA_JWT) no configuradas en el archivo .env");
   }
 
-  // Fallback seguro en memoria manteniendo el nombre original
-  const mockIpfsHash = "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco";
-  const sha256Hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+  const formData = new FormData();
+  formData.append("file", file, filename);
 
-  return {
-    downloadUrl: `https://gateway.pinata.cloud/ipfs/${mockIpfsHash}`,
-    sha256Hash,
-    filename: originalName,
-  };
+  const metadata = JSON.stringify({
+    name: filename,
+    keyvalues: {
+      title: title,
+      platform: "Scienstellar",
+    }
+  });
+  formData.append("pinataMetadata", metadata);
+
+  const headers = {};
+  if (pinataJwt) {
+    headers["Authorization"] = `Bearer ${pinataJwt}`;
+  } else {
+    headers["pinata_api_key"] = pinataApiKey;
+    headers["pinata_secret_api_key"] = pinataSecretKey;
+  }
+
+  const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Pinata error (${res.status}): ${errText}`);
+  }
+
+  const json = await res.json();
+  return `https://gateway.pinata.cloud/ipfs/${json.IpfsHash}`;
 }

@@ -43,13 +43,15 @@ export async function fetchOnChainPapers() {
         if (StellarSdk.rpc.Api.isSimulationSuccess(getSim)) {
           const item = StellarSdk.scValToNative(getSim.result.retval);
           if (item) {
+            const version = (item.versions && item.versions.length > 0) ? item.versions[0] : {};
             let meta = {};
-            const rawHash = item.content_hash || item.metadata || "{}";
+            const rawHash = version.content_hash || item.metadata || "{}";
             try {
               meta = JSON.parse(rawHash);
             } catch {
-              meta = { minDonation: "5", decryptionKey: "", hash: rawHash };
+              meta = { minDonation: "5.0", decryptionKey: "", hash: rawHash };
             }
+
             papers.push({
               id: String(i),
               sdoi: `S-DOI 2026${String(i).padStart(3, "0")}`,
@@ -57,11 +59,11 @@ export async function fetchOnChainPapers() {
               authors: item.author_name || "Anonymous",
               abstract: item.abstract_text || "",
               category: item.category || "General Science",
-              downloadUrl: item.magnet_link || item.download_url || "",
-              minDonation: String(meta.minDonation || "5"),
+              downloadUrl: version.magnet_link || item.magnet_link || item.download_url || "",
+              minDonation: String(meta.minDonation || "5.0"),
               decryptionKey: meta.decryptionKey || "",
               sha256Hash: meta.hash || "",
-              authorAddress: item.author ? item.author.toString() : "",
+              authorAddress: item.author_address ? item.author_address.toString() : "",
               isOnChain: true,
             });
           }
@@ -102,10 +104,11 @@ export async function publishPaperOnChain({
 
   const metadataPayload = JSON.stringify({
     hash: sha256Hash || "",
-    minDonation: String(minDonation || "5"),
+    minDonation: String(minDonation || "5.0"),
     decryptionKey: decryptionKey || "",
   });
 
+  // Orden exacto del contrato: author, author_name, title, abstract_text, category, magnet_link, content_hash
   const tx = new StellarSdk.TransactionBuilder(account, {
     fee: StellarSdk.BASE_FEE || "100",
     networkPassphrase: StellarSdk.Networks.TESTNET,
@@ -113,6 +116,7 @@ export async function publishPaperOnChain({
     .addOperation(
       contract.call(
         "publish_paper",
+        new StellarSdk.Address(authorAddress).toScVal(),
         StellarSdk.nativeToScVal(authorName || "Anonymous", { type: "string" }),
         StellarSdk.nativeToScVal(title || "Untitled", { type: "string" }),
         StellarSdk.nativeToScVal(abstractText || "No abstract provided.", { type: "string" }),
@@ -132,7 +136,6 @@ export async function publishPaperOnChain({
   const assemble = StellarSdk.rpc?.assembleTransaction || StellarSdk.assembleTransaction;
   const preparedTx = assemble(tx, sim).build();
 
-  // Firma oficial limpia usando @stellar/freighter-api
   const signedResult = await signTransaction(preparedTx.toXDR(), {
     network: "TESTNET",
     networkPassphrase: StellarSdk.Networks.TESTNET,

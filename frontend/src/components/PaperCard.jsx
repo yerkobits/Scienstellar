@@ -8,10 +8,11 @@ export default function PaperCard({ paper }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [unlockedData, setUnlockedData] = useState(null);
   const [txHash, setTxHash] = useState("");
-  const [donationAmount, setDonationAmount] = useState(paper.minDonation || "5");
-  
+  const [donationAmount, setDonationAmount] = useState(paper.minDonation || "5.0");
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const [includeDevTip, setIncludeDevTip] = useState(false);
-  const [devTipAmount, setDevTipAmount] = useState("10");
+  const [devTipAmount, setDevTipAmount] = useState("10.0");
 
   const [showDonateModal, setShowDonateModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -19,31 +20,52 @@ export default function PaperCard({ paper }) {
 
   const sdoiLabel = paper.sdoi || "S-DOI 2026001";
 
+  // El autor tiene acceso gratuito y automático
+  const isAuthor = Boolean(
+    walletAddress && 
+    paper.authorAddress && 
+    walletAddress.trim().toLowerCase() === paper.authorAddress.trim().toLowerCase()
+  );
+
   useEffect(() => {
+    if (isAuthor) {
+      setUnlockedData({
+        downloadUrl: paper.downloadUrl,
+        decryptionKey: paper.decryptionKey,
+        sha256Hash: paper.sha256Hash,
+        fileName: paper.fileName || `${paper.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.zip`,
+      });
+      return;
+    }
+
     if (!walletAddress) {
       setUnlockedData(null);
       return;
     }
+
     const storageKey = `scien_unlocked_${walletAddress}_${paper.id}`;
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         setUnlockedData({
-          downloadUrl: parsed.downloadUrl,
-          decryptionKey: parsed.decryptionKey,
+          downloadUrl: parsed.downloadUrl || paper.downloadUrl,
+          decryptionKey: parsed.decryptionKey || paper.decryptionKey,
           sha256Hash: parsed.sha256Hash || paper.sha256Hash,
+          fileName: parsed.fileName || paper.fileName || `${paper.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.zip`,
         });
         if (parsed.txHash) setTxHash(parsed.txHash);
       } catch (err) {
-        console.error("Error restoring unlocked paper state:", err);
+        console.error("Error restaurando estado:", err);
       }
+    } else {
+      setUnlockedData(null);
     }
-  }, [walletAddress, paper.id, paper.sha256Hash]);
+  }, [walletAddress, isAuthor, paper.id, paper.downloadUrl, paper.decryptionKey, paper.sha256Hash, paper.title, paper.fileName]);
 
   const handleDownloadClick = () => {
     if (!isConnected) {
-      alert("A connected Freighter wallet is required to donate and download.");
+      alert("A connected Freighter wallet is required.");
       connect();
       return;
     }
@@ -55,15 +77,15 @@ export default function PaperCard({ paper }) {
       try {
         const net = await window.freighter.getNetwork();
         if (net && net !== "TESTNET" && !String(net).toLowerCase().includes("test")) {
-          alert(`SAFETY WARNING: Your Freighter wallet is currently set to [${net}]. Scienstellar Testnet requires TESTNET.`);
+          alert(`SAFETY WARNING: Wallet is set to [${net}]. Switch to TESTNET.`);
           return;
         }
       } catch (e) {
-        console.warn("Could not verify Freighter network explicitly:", e);
+        console.warn("Network check notice:", e);
       }
     }
 
-    const minReq = parseFloat(paper.minDonation || "5");
+    const minReq = parseFloat(paper.minDonation || "5.0");
     const userDonation = parseFloat(donationAmount || "0");
     if (userDonation < minReq) {
       alert(`Minimum donation required is ${minReq} XLM.`);
@@ -93,10 +115,13 @@ export default function PaperCard({ paper }) {
         }
       }
 
+      const originalName = paper.fileName || `${paper.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.zip`;
+
       const unlockedPayload = {
         downloadUrl: paper.downloadUrl,
         decryptionKey: paper.decryptionKey,
         sha256Hash: paper.sha256Hash,
+        fileName: originalName,
         txHash: res.hash,
       };
 
@@ -114,18 +139,41 @@ export default function PaperCard({ paper }) {
     }
   };
 
-  const handleDownloadZipFile = () => {
+  // Descarga del archivo con su NOMBRE ORIGINAL EXACTO
+  const handleDownloadDirectZip = async () => {
+    const url = unlockedData?.downloadUrl || paper.downloadUrl;
+    if (!url || !url.startsWith("http")) {
+      alert("Storage link not yet populated on Pinata.");
+      return;
+    }
+
+    setIsDownloading(true);
     try {
-      const fileContent = `SCIENSTELLAR RESEARCH PACKAGE\n${sdoiLabel}\nTitle: ${paper.title}\nAuthors: ${paper.authors}\nChecksum: ${paper.sha256Hash}\nStellar Testnet Authentication Verified.`;
-      const blob = new Blob([fileContent], { type: "application/zip" });
-      const downloadLink = document.createElement("a");
-      downloadLink.href = URL.createObjectURL(blob);
-      downloadLink.download = `${sdoiLabel.replace(/\s+/g, "_")}.zip`;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-    } catch (e) {
-      alert("Download failed. Please try again.");
+      // Descargar el binario desde Pinata IPFS
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("No se pudo obtener el archivo desde Pinata IPFS");
+      const blob = await resp.blob();
+
+      // Determinar el nombre exacto original del archivo
+      let targetName = unlockedData?.fileName || paper.fileName;
+      if (!targetName || !targetName.endsWith(".zip")) {
+        targetName = `${paper.title.replace(/[^a-zA-Z0-9_-]/g, "_")}.zip`;
+      }
+
+      // Descargar con el nombre original sin usar el hash de IPFS
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = targetName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.warn("Fallo descarga blob, abriendo ventana directa:", err);
+      window.open(url, "_blank");
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -144,7 +192,7 @@ export default function PaperCard({ paper }) {
       };
       existingReports.push(newReport);
       localStorage.setItem("scien_admin_reports", JSON.stringify(existingReports));
-      alert("Report successfully filed to Admin Console.");
+      alert("Report filed to Moderation Panel.");
       setShowReportModal(false);
       setReportReason("");
     } catch (err) {
@@ -160,6 +208,7 @@ export default function PaperCard({ paper }) {
         <div className="absolute -top-4 left-6 bg-slate-900 border-t-2 border-x-2 border-cyan-500/80 px-4 py-1 text-[11px] font-mono text-cyan-300 rounded-t-xl flex items-center gap-2 shadow-lg">
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)] animate-pulse"></span>
           <span>{sdoiLabel}</span>
+          {isAuthor && <span className="ml-1 text-[9px] bg-emerald-950 text-emerald-400 px-1.5 py-0.2 rounded border border-emerald-600">[AUTHOR]</span>}
         </div>
 
         <div className="mt-3 mb-4 bg-slate-950/95 border border-cyan-500/40 rounded-2xl p-4 shadow-[inset_0_0_15px_rgba(6,182,212,0.1)] group-hover:border-cyan-400 transition-all relative">
@@ -193,7 +242,7 @@ export default function PaperCard({ paper }) {
           <div className="absolute bottom-3 right-4">
             <button
               onClick={() => setShowReportModal(true)}
-              className="text-[10px] text-red-400 hover:text-red-300 uppercase tracking-widest font-bold underline bg-slate-950/80 px-2 py-0.5 rounded border border-red-900/60"
+              className="text-[10px] text-red-400 hover:text-red-300 uppercase tracking-widest font-bold underline bg-slate-950/80 px-2 py-0.5 rounded border border-red-900/60 cursor-pointer"
             >
               [Report]
             </button>
@@ -204,7 +253,9 @@ export default function PaperCard({ paper }) {
           {unlockedData ? (
             <div className="bg-slate-950 border border-cyan-400 rounded-2xl p-3 space-y-2 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-cyan-300 font-mono">✓ ACCESS GRANTED</span>
+                <span className="text-[11px] font-bold text-cyan-300 font-mono">
+                  {isAuthor ? "✓ AUTHOR ACCESS" : "✓ ACCESS GRANTED"}
+                </span>
                 {txHash && (
                   <a
                     href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
@@ -218,7 +269,7 @@ export default function PaperCard({ paper }) {
               </div>
 
               <div>
-                <span className="text-[10px] text-cyan-500 block mb-0.5 font-mono">DECRYPTION SECRET:</span>
+                <span className="text-[10px] text-cyan-500 block mb-0.5 font-mono">ZIP PASSWORD / SECRET:</span>
                 <div className="flex items-center gap-1">
                   <input
                     type="text"
@@ -229,9 +280,9 @@ export default function PaperCard({ paper }) {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(unlockedData.decryptionKey);
-                      alert("Decryption key copied!");
+                      alert("ZIP password copied!");
                     }}
-                    className="px-2 py-1 text-[10px] uppercase font-bold bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-600 rounded-lg"
+                    className="px-2 py-1 text-[10px] uppercase font-bold bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-600 rounded-lg cursor-pointer"
                   >
                     Copy
                   </button>
@@ -240,7 +291,7 @@ export default function PaperCard({ paper }) {
 
               {unlockedData.sha256Hash && (
                 <div>
-                  <span className="text-[10px] text-cyan-500 block mb-0.5 font-mono">SHA-256 HASH:</span>
+                  <span className="text-[10px] text-cyan-500 block mb-0.5 font-mono">SHA-256 CHECKSUM:</span>
                   <div className="flex items-center gap-1">
                     <input
                       type="text"
@@ -253,7 +304,7 @@ export default function PaperCard({ paper }) {
                         navigator.clipboard.writeText(unlockedData.sha256Hash);
                         alert("Checksum copied!");
                       }}
-                      className="px-2 py-1 text-[10px] uppercase font-bold bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-600 rounded-lg"
+                      className="px-2 py-1 text-[10px] uppercase font-bold bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-600 rounded-lg cursor-pointer"
                     >
                       Copy
                     </button>
@@ -262,16 +313,17 @@ export default function PaperCard({ paper }) {
               )}
 
               <button
-                onClick={handleDownloadZipFile}
-                className="mt-2 block w-full text-center px-3 py-2 text-xs font-bold bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-md transition-all uppercase tracking-wider font-mono rounded-xl cursor-pointer"
+                onClick={handleDownloadDirectZip}
+                disabled={isDownloading}
+                className="mt-2 block w-full text-center px-3 py-2 text-xs font-bold bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-md uppercase tracking-wider font-mono rounded-xl cursor-pointer disabled:opacity-50"
               >
-                &gt;&gt; DOWNLOAD ENCRYPTED ZIP
+                {isDownloading ? "DOWNLOADING..." : ">> DOWNLOAD ZIP"}
               </button>
             </div>
           ) : (
             <button
               onClick={handleDownloadClick}
-              className="w-full py-3 px-4 bg-slate-950 hover:bg-cyan-950 text-cyan-300 text-xs font-bold uppercase tracking-wider transition-all border border-cyan-500/80 rounded-2xl flex items-center justify-between shadow-[0_0_10px_rgba(6,182,212,0.1)] hover:shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+              className="w-full py-3 px-4 bg-slate-950 hover:bg-cyan-950 text-cyan-300 text-xs font-bold uppercase tracking-wider transition-all border border-cyan-500/80 rounded-2xl flex items-center justify-between shadow-[0_0_10px_rgba(6,182,212,0.1)] hover:shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer"
             >
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
@@ -309,7 +361,7 @@ export default function PaperCard({ paper }) {
               </label>
               <input
                 type="number"
-                step="1"
+                step="0.1"
                 min={paper.minDonation}
                 value={donationAmount}
                 onChange={(e) => setDonationAmount(e.target.value)}
@@ -323,7 +375,7 @@ export default function PaperCard({ paper }) {
                   type="checkbox"
                   checked={includeDevTip}
                   onChange={(e) => setIncludeDevTip(e.target.checked)}
-                  className="rounded bg-black border-cyan-500 text-cyan-400 focus:ring-cyan-400"
+                  className="rounded bg-black border-cyan-500 text-cyan-400 focus:ring-cyan-400 cursor-pointer"
                 />
                 <span className="text-xs text-cyan-300">Include voluntary tip for Scienstellar Developer</span>
               </label>
@@ -331,8 +383,8 @@ export default function PaperCard({ paper }) {
                 <div className="pt-1">
                   <input
                     type="number"
-                    step="1"
-                    min="1"
+                    step="0.1"
+                    min="1.0"
                     value={devTipAmount}
                     onChange={(e) => setDevTipAmount(e.target.value)}
                     className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-1.5 text-xs text-cyan-300"
@@ -346,14 +398,14 @@ export default function PaperCard({ paper }) {
               <button
                 onClick={() => setShowDonateModal(false)}
                 disabled={isProcessing}
-                className="px-4 py-2 text-xs font-bold uppercase rounded-xl bg-black hover:bg-slate-900 text-cyan-400 border border-cyan-700"
+                className="px-4 py-2 text-xs font-bold uppercase rounded-xl bg-black hover:bg-slate-900 text-cyan-400 border border-cyan-700 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmDonation}
                 disabled={isProcessing}
-                className="px-4 py-2 text-xs font-bold uppercase rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-500/30 disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold uppercase rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-500/30 disabled:opacity-50 cursor-pointer"
               >
                 {isProcessing ? "Processing Tx..." : `Confirm & Donate ${parseFloat(donationAmount) + (includeDevTip ? parseFloat(devTipAmount || 0) : 0)} XLM`}
               </button>
@@ -384,13 +436,13 @@ export default function PaperCard({ paper }) {
                 <button
                   type="button"
                   onClick={() => setShowReportModal(false)}
-                  className="px-4 py-2 text-xs bg-black text-cyan-400 border border-cyan-700 rounded-xl"
+                  className="px-4 py-2 text-xs bg-black text-cyan-400 border border-cyan-700 rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl uppercase shadow-lg shadow-red-600/30"
+                  className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl uppercase shadow-lg shadow-red-600/30 cursor-pointer"
                 >
                   Submit Report
                 </button>
