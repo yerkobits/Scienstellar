@@ -1,317 +1,209 @@
 import React, { useState } from "react";
 import { useWallet } from "../context/WalletContext";
+import { uploadEncryptedPaperToPinata } from "../services/pinata";
 import { publishPaperOnChain } from "../services/contract";
-import { generateDecryptionKey, createPasswordProtectedZip } from "../services/crypto";
-import { uploadToIPFS } from "../services/ipfs";
-
-const RESEARCH_CATEGORIES = [
-  "Computer Science & AI",
-  "Physics & Astronomy",
-  "Mathematics & Logic",
-  "Biology & Genetics",
-  "Medicine & Healthcare",
-  "Chemistry & Materials",
-  "Economics & Finance",
-  "Engineering & Robotics",
-  "Environmental & Climate Science",
-  "Social Sciences & Humanities",
-  "Interdisciplinary Research",
-];
 
 export default function SubmitPaperModal({ isOpen, onClose, onPaperCreated }) {
-  const { walletAddress, isConnected } = useWallet();
+  const { walletAddress, isConnected, connect } = useWallet();
 
-  const [formData, setFormData] = useState({
-    title: "",
-    abstract: "",
-    authors: "",
-    category: "Computer Science & AI",
-    downloadUrl: "",
-    sha256Hash: "",
-    minDonation: "5",
-    decryptionKey: generateDecryptionKey(), // Clean password without prefix
-    fileName: "",
-  });
-
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [fileStatus, setFileStatus] = useState("");
-  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [title, setTitle] = useState("");
+  const [authors, setAuthors] = useState("");
+  const [abstract, setAbstract] = useState("");
+  const [category, setCategory] = useState("Computer Science & AI");
+  const [minDonation, setMinDonation] = useState("5");
+  const [file, setFile] = useState(null);
+  const [encryptionPassword, setEncryptionPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
   if (!isOpen) return null;
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Strict validation: ONLY .zip files allowed
-    if (!file.name.toLowerCase().endsWith(".zip")) {
-      alert("Invalid format: Only ZIP (.zip) archives are allowed.");
-      e.target.value = "";
-      return;
-    }
-
-    setSelectedFile(file);
-    setIsProcessingFile(true);
-    setFileStatus("Securing ZIP with password-protection (ZipCrypto standard)...");
-
-    try {
-      const password = formData.decryptionKey || generateDecryptionKey();
-
-      // 1. Create native password-protected ZIP archive
-      const { zipBlob, sha256Hash, fileName } = await createPasswordProtectedZip(file, password);
-
-      setFileStatus(`Uploading protected archive (${fileName}) to external IPFS...`);
-
-      // 2. Upload password-protected binary ZIP to IPFS
-      const ipfsResult = await uploadToIPFS(zipBlob, fileName);
-
-      // 3. Set locked system values
-      setFormData((prev) => ({
-        ...prev,
-        sha256Hash,
-        downloadUrl: ipfsResult.url,
-        decryptionKey: password,
-        fileName,
-      }));
-
-      setFileStatus(`✓ Protected ZIP uploaded to IPFS: ${ipfsResult.cid}`);
-    } catch (err) {
-      console.error(err);
-      setFileStatus(`Upload error: ${err.message || "Failed to process ZIP."}`);
-    } finally {
-      setIsProcessingFile(false);
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (!isConnected || !walletAddress) {
-      alert("Unauthorized: Please connect your Freighter wallet to publish.");
+      alert("Please connect your Freighter wallet first.");
+      connect();
       return;
     }
-
-    if (!formData.downloadUrl || !formData.decryptionKey) {
-      alert("Please upload a ZIP research archive before publishing.");
+    if (!file) {
+      alert("Please select a research file (.zip or document) to upload.");
+      return;
+    }
+    if (!encryptionPassword) {
+      alert("Please specify an encryption password for the file.");
       return;
     }
 
     setIsSubmitting(true);
+    setStatusMessage("Encrypting file locally in dApp & uploading to Pinata...");
+
     try {
-      const res = await publishPaperOnChain({
+      const uploadResult = await uploadEncryptedPaperToPinata(file, encryptionPassword, title);
+      setStatusMessage("File uploaded to Pinata! Registering paper on Soroban Testnet...");
+
+      await publishPaperOnChain({
         authorAddress: walletAddress,
-        authorName: formData.authors,
-        title: formData.title,
-        abstractText: formData.abstract,
-        category: formData.category,
-        downloadUrl: formData.downloadUrl,
-        sha256Hash: formData.sha256Hash,
-        minDonation: formData.minDonation,
-        decryptionKey: formData.decryptionKey,
-        fileName: formData.fileName || (selectedFile ? selectedFile.name : "archive.zip"),
+        title,
+        authors,
+        abstract,
+        category,
+        minDonation,
+        downloadUrl: uploadResult.downloadUrl,
+        decryptionKey: encryptionPassword,
+        sha256Hash: uploadResult.sha256Hash,
       });
 
-      alert(`✓ Research ZIP successfully published on Stellar Testnet & IPFS!\nTx Hash: ${res.hash}`);
-      onPaperCreated();
-      onClose();
+      setStatusMessage("Success! Research paper successfully published.");
+      setTimeout(() => {
+        setIsSubmitting(false);
+        setStatusMessage("");
+        onPaperCreated();
+        onClose();
+      }, 1500);
     } catch (err) {
-      console.error(err);
-      alert("Failed to publish on-chain: " + (err.message || "Transaction rejected."));
-    } finally {
+      console.error("Submission error:", err);
+      alert("Error publishing paper: " + (err.message || err));
       setIsSubmitting(false);
+      setStatusMessage("");
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="text-xl font-bold text-white">Publish Scientific Paper (ZIP Only)</h2>
-            <p className="text-xs text-gray-400">Password-protected ZIP archive stored on live IPFS</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+      <div className="sci-folder-card max-w-xl w-full p-8 space-y-6 shadow-[0_0_50px_rgba(6,182,212,0.4)] rounded-3xl max-h-[90vh] overflow-y-auto font-mono text-cyan-300">
+        <div className="flex items-center justify-between border-b border-cyan-500/40 pb-4">
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-cyan-400 animate-pulse"></span>
+            <h2 className="text-lg font-bold text-cyan-200 tracking-wide uppercase">&gt; Submit New Research Paper</h2>
           </div>
-          <button onClick={onClose} disabled={isSubmitting} className="text-gray-400 hover:text-white">✕</button>
+          <button
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="text-cyan-400 hover:text-cyan-200 text-sm px-3 py-1 border border-cyan-600 rounded-xl bg-slate-950"
+          >
+            [X]
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="block text-xs uppercase text-gray-400 mb-1">Author Stellar Address (Locked)</label>
+            <label className="block uppercase text-cyan-400 mb-1 font-bold">Research Title</label>
             <input
               type="text"
-              readOnly
-              value={walletAddress || ""}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm font-mono text-emerald-400 cursor-not-allowed select-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs uppercase text-gray-400 mb-1">Paper Title</label>
-            <input
-              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              placeholder="e.g. Quantum Cryptography in Stellar L2"
               required
-              disabled={isSubmitting}
-              placeholder="e.g. Scalable Consensus Protocols on Stellar"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm text-white"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs uppercase text-gray-400 mb-1">Research Field / Category</label>
-              <select
-                disabled={isSubmitting}
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-              >
-                {RESEARCH_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs uppercase text-gray-400 mb-1">Authors & Institutions</label>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">Authors</label>
               <input
                 type="text"
+                value={authors}
+                onChange={(e) => setAuthors(e.target.value)}
+                className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                placeholder="Dr. J. Doe, A. Smith"
                 required
-                disabled={isSubmitting}
-                placeholder="e.g. A. Vance (MIT), S. Nakamoto"
-                value={formData.authors}
-                onChange={(e) => setFormData({ ...formData, authors: e.target.value })}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm text-white"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs uppercase text-gray-400 mb-1">Abstract</label>
-            <textarea
-              required
-              rows={3}
-              disabled={isSubmitting}
-              placeholder="Summary of research methodology and contributions..."
-              value={formData.abstract}
-              onChange={(e) => setFormData({ ...formData, abstract: e.target.value })}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs uppercase text-gray-400 mb-1">Minimum Donation (XLM)</label>
-            <input
-              type="number"
-              step="0.1"
-              min="0.1"
-              required
-              disabled={isSubmitting}
-              value={formData.minDonation}
-              onChange={(e) => setFormData({ ...formData, minDonation: e.target.value })}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-sm text-white font-mono"
-            />
-          </div>
-
-          {/* ZIP Upload Box (Strictly ZIP only) */}
-          <div className="bg-gray-950 border border-indigo-900/60 p-4 rounded-xl space-y-3">
             <div>
-              <h3 className="text-sm font-semibold text-indigo-400">Research Archive (Strictly .ZIP Only)</h3>
-              <p className="text-xs text-gray-400 mt-0.5">
-                The archive is encrypted with password protection before uploading to IPFS.
-              </p>
-            </div>
-
-            <div className="border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer transition-colors bg-gray-900/50">
-              <input
-                type="file"
-                id="paper-file-upload"
-                accept=".zip,application/zip,application/x-zip-compressed"
-                onChange={handleFileChange}
-                disabled={isProcessingFile || isSubmitting}
-                className="hidden"
-              />
-              <label htmlFor="paper-file-upload" className="cursor-pointer block">
-                <span className="text-indigo-400 text-sm font-medium hover:underline block">
-                  {selectedFile ? `Selected: ${selectedFile.name}` : "Click to select ZIP Archive (.zip)"}
-                </span>
-                <span className="text-xs text-gray-500 block mt-1">
-                  Automatic password protection and IPFS distribution
-                </span>
-              </label>
-            </div>
-
-            {fileStatus && (
-              <div className="text-xs font-mono text-emerald-400 bg-emerald-950/30 p-2 rounded border border-emerald-900/40">
-                {fileStatus}
-              </div>
-            )}
-
-            {/* Read-Only System Metadata */}
-            <div className="space-y-3 pt-2 border-t border-gray-800/80">
-              <div>
-                <label className="block text-[11px] uppercase tracking-wider text-gray-400 mb-1 flex items-center justify-between">
-                  <span>IPFS Storage Link</span>
-                  <span className="text-[10px] text-gray-500 font-mono">System-assigned</span>
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  tabIndex="-1"
-                  placeholder="Auto-generated upon ZIP upload"
-                  value={formData.downloadUrl}
-                  className="w-full bg-gray-900/90 border border-gray-800 rounded-lg p-2 text-xs text-indigo-300 font-mono cursor-not-allowed select-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] uppercase tracking-wider text-gray-400 mb-1 flex items-center justify-between">
-                  <span>Archive Integrity Hash (SHA-256)</span>
-                  <span className="text-[10px] text-gray-500 font-mono">System-assigned</span>
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  tabIndex="-1"
-                  placeholder="Calculated from original archive"
-                  value={formData.sha256Hash}
-                  className="w-full bg-gray-900/90 border border-gray-800 rounded-lg p-2 text-xs text-gray-300 font-mono cursor-not-allowed select-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] uppercase tracking-wider text-gray-400 mb-1 flex items-center justify-between">
-                  <span>ZIP Password (No Prefix)</span>
-                  <span className="text-[10px] text-gray-500 font-mono">System-assigned</span>
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  tabIndex="-1"
-                  value={formData.decryptionKey}
-                  className="w-full bg-gray-900/90 border border-gray-800 rounded-lg p-2 text-xs text-emerald-400 font-mono cursor-not-allowed select-all"
-                />
-              </div>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">Category / Field</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              >
+                <option value="Computer Science & AI">Computer Science & AI</option>
+                <option value="Physics & Astronomy">Physics & Astronomy</option>
+                <option value="Mathematics & Logic">Mathematics & Logic</option>
+                <option value="Biology & Genetics">Biology & Genetics</option>
+                <option value="Medicine & Healthcare">Medicine & Healthcare</option>
+                <option value="Chemistry & Materials">Chemistry & Materials</option>
+                <option value="Economics & Finance">Economics & Finance</option>
+                <option value="Engineering & Robotics">Engineering & Robotics</option>
+                <option value="Environmental & Climate Science">Environmental Science</option>
+                <option value="Social Sciences & Humanities">Social Sciences</option>
+                <option value="Interdisciplinary Research">Interdisciplinary</option>
+              </select>
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-800">
+          <div>
+            <label className="block uppercase text-cyan-400 mb-1 font-bold">Abstract</label>
+            <textarea
+              rows="3"
+              value={abstract}
+              onChange={(e) => setAbstract(e.target.value)}
+              className="w-full bg-black border border-cyan-600 rounded-xl p-3 text-xs text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              placeholder="Brief summary of your research findings..."
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">Min Donation (XLM)</label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                value={minDonation}
+                onChange={(e) => setMinDonation(e.target.value)}
+                className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                required
+              />
+            </div>
+            <div>
+              <label className="block uppercase text-cyan-400 mb-1 font-bold">File Encryption Password</label>
+              <input
+                type="text"
+                value={encryptionPassword}
+                onChange={(e) => setEncryptionPassword(e.target.value)}
+                className="w-full bg-black border border-cyan-600 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                placeholder="Secret key for reader decryption"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="bg-slate-950 p-4 rounded-2xl border border-cyan-800 space-y-2">
+            <label className="block uppercase text-cyan-400 font-bold">Research File (.zip or document)</label>
+            <p className="text-[11px] text-cyan-500">
+              * Note: The dApp automatically encrypts your file into an <code className="text-cyan-300">.zip.encrypted</code> package before uploading it to Pinata with your original filename.
+            </p>
+            <input
+              type="file"
+              onChange={(e) => setFile(e.target.files[0])}
+              className="w-full text-xs text-cyan-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-cyan-950 file:text-cyan-300 hover:file:bg-cyan-900"
+              required
+            />
+          </div>
+
+          {isSubmitting && (
+            <div className="bg-cyan-950/60 p-3 rounded-xl border border-cyan-500 text-center text-cyan-300 animate-pulse">
+              {statusMessage}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
-              disabled={isSubmitting || isProcessingFile}
               onClick={onClose}
-              className="px-4 py-2 text-sm rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300"
+              disabled={isSubmitting}
+              className="px-4 py-2 uppercase rounded-xl bg-black hover:bg-slate-900 text-cyan-400 border border-cyan-700"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || isProcessingFile}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 flex items-center gap-2"
+              disabled={isSubmitting}
+              className="px-6 py-2 uppercase font-bold rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-500/30 disabled:opacity-50"
             >
-              {isSubmitting ? "Publishing On-Chain..." : "Sign & Publish to Testnet"}
+              {isSubmitting ? "Publishing..." : "Upload & Register Paper"}
             </button>
           </div>
         </form>
