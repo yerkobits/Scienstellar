@@ -38,7 +38,7 @@ function ScienstellarApp() {
     setIsLoadingOnChain(true);
     try {
       const onChainList = await fetchOnChainPapers();
-      setPapers(onChainList || []);
+      setPapers((onChainList || []).slice().reverse());
     } catch (err) {
       console.error("Error loading on-chain papers:", err);
       setPapers([]);
